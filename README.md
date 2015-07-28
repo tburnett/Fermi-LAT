@@ -5,7 +5,7 @@ These notebooks are maintained at the SLAC computer system, the home of Fermi-LA
 
 The basic structure:
 
-* dev Were I'm putting development notebooks
+* dev Where I'm putting development notebooks
 * misc
 * pass8 The 6-year skymodel, used as a basis for the monthly
 * pipeline Development and testing for pipeline-related issues
