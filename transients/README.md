@@ -8,3 +8,8 @@ These notebooks are to document the development and procedures for running the m
 Some specific notebooks with more documentation:
 
 * [pipeline documentation](https://github.com/tburnett/Fermi-LAT/blob/master/transients/develop%20and%20test%20pipeline.ipynb)
+* [monthly summmary analysis](https://github.com/tburnett/Fermi-LAT/blob/master/transients/Monthly%20summary%20plots.ipynb)
+* [Sun position study](https://github.com/tburnett/Fermi-LAT/blob/master/transients/monthly%20Sun%20position.ipynb)
+* [PGWAVE check](https://github.com/tburnett/Fermi-LAT/blob/master/transients/study%20pgwave%20results.ipynb)
+* [Analysis of BZCAT associations](https://github.com/tburnett/Fermi-LAT/blob/master/transients/BZCAT%20study.ipynb)
+
