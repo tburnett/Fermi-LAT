@@ -10,6 +10,6 @@ The organization of the folders:
 * [pass8](https://github.com/tburnett/Fermi-LAT/tree/master/pass8) The 6-year skymodel, used as a basis for the monthly
 * [pipeline](https://github.com/tburnett/Fermi-LAT/tree/master/pipeline) Development and testing for pipeline-related issues
 * [pointlike\_document](https://github.com/tburnett/Fermi-LAT/tree/master/pointlike_document) Notebooks documenting the basic design of _like2_, the new version of pointlike
-* [transients](https://github.com/tburnett/Fermi-LAT/tree/master/transients) The montly analysis
+* [transients](https://github.com/tburnett/Fermi-LAT/tree/master/transients) The monthly analysis: details of the 72 models of the sky constructed from the 6-year model, plus individual source finding
 
 Note than many notebooks are works-in-progress, some forgotten. 
