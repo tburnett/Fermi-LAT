@@ -40,7 +40,7 @@ class ApplyToDiffuse(DocPublisher):
     """
     title: Application of the factor cube to the diffuse model
     author: Toby Burnett
-    sections: galactic_diffuse_model correction_factor_maps
+    sections: galactic_diffuse_model correction_factor_maps apply_factors
 
     diffuse_file: 'test_model_InnerGalaxyYB01_test512_interp_nopatch.fits'
     factor_cubic_fit_file: 
@@ -100,6 +100,12 @@ class ApplyToDiffuse(DocPublisher):
         #---------------
         self.publishme()
 
+    def apply_factors(self):
+        """Application of the factor cube
+        """
+        #---------------
+        self.publishme()
+
 
 class Polyfit(object):
     """ Manage a log parabola fit to every pixel"""
@@ -129,8 +135,9 @@ class Polyfit(object):
 #         healpix_map.multi_ait(self.hpfit, cmap=plt.get_cmap('jet'),  grid_color='grey')
 
     def __call__(self, x, n):
-        if not hasattr(x, '__iter__'):
-            x = np.array([x])
+        # if not hasattr(x, '__iter__'):
+        #     x = np.array([x])
+        x = np.atleast_1d(x)
         fit= self.fit[:,n]; 
         t =fit.reshape(3,1)
         return ( t * np.vstack([x**2, x, np.ones(len(x))] )).sum(axis=0)
@@ -161,7 +168,7 @@ class Polyfit(object):
             ax.set(xticks=[-0.5, 3.5, 7.5], xticklabels='0.1 1.0 10'.split())
         else:
             ax.set_xticks(self.planes[::2])  
-        ax.axhline(1.0, color='lightgrey')
+        ax.axhline(1.0, color='grey')
         ax.grid(alpha=0.3)
         
     
