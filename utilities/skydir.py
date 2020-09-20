@@ -17,6 +17,9 @@ class SkyDir(object):
     def __str__(self):
         return str(self.coord)
     def __repr__(self): return str(self)
+
+    def __len__(self): return len(self.coord)
+    def __getitem__(self, index): return self.coord[index]
     
     @property
     def fk5(self):

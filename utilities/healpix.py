@@ -42,31 +42,31 @@ class HPcube(HPmap):
     """Implement a spcetral cube with logarithmic interpolation
     """
 
-    def __init__(self, maps:'list of HPmap objects', 
+    def __init__(self, spectral_cube:'2-d array', 
                     energies:'corresponding energies',
-                     cblabel='', 
-                     energy:'default value'=1000,
-                     **kwargs ):
-        self.maps = maps
+                    cblabel='', 
+                    energy:'default value'=1000,
+                    unit:'units'=''
+                     ):
+        self.spectra = spectral_cube
+        self.nside = healpy.get_nside(self.spectra[0])
+        self.maps = list(map(HPmap, self.spectra))
         self.energies = energies
-        self.cblabel=cblabel
+        self.unit = unit
+        if not cblabel and unit:
+            unit = unit.replace(' ', '\\ ')
+            self.cblabel = fr'$\mathrm{{ {unit} }}$'
+        else:
+            self.cblabel=cblabel
         self.loge = np.log(energies) # for logarithmin interpolation
-        self.nside = maps[0].nside
-        self.__dict__.update(**kwargs)
         self.set_energy(energy)
         if np.std(np.diff(self.energies))<1:
             print('Warning: this is not a spectral cube, which should use logarithmic interpolation')
      
-    def __call__(self, skydir:'SkyDir', 
-                energy:'energy',
-                ) -> 'value[s]':
-        """
-        """
-        skyindex = skydir.to_healpix(nside=self.nside)
-        return self.map[skyindex]
-
     def __str__(self):
-        return('\n'.join([str(map) for map in self]))
+        ee = self.energies
+        return f'<{self.__class__.__name__}>: nside {self.nside}, '\
+               f' {len(ee)} energies {ee[0]:.2e}-{ee[-1]:.2e} MeV '
 
     def __getitem__(self, index):
         return self.maps[index]
@@ -85,7 +85,9 @@ class HPcube(HPmap):
                 return
         # interpret as an energy
         self.set_energy(float(index))
-        ait_plot(self, self.energy, **kwargs)        
+        kw = dict(log=True, cblabel=getattr(self, 'cblabel', ''))
+        kw.update(**kwargs)
+        ait_plot(self, self.energy, **kw)        
 
     def set_energy(self, energy): 
         # set up logarithmic interpolation
@@ -159,27 +161,16 @@ class HPcube(HPmap):
             
             if vector_mode:
                 # one vector column, expect 2d array with shape (12*nside**2, len(energies))
-                spectra = hdus[1].data.field(0)
-                nside = int(np.sqrt(spectra.shape[0]/12.))
-                assert spectra.shape[1]==len(energies), 'shape inconsistent with number of energies'
-
-                maps = []
-                for i, col in enumerate(spectra.T):
-                    E = energies[i]
-                    maps.append(HPmap(col, f'{E:.2f} MeV'))
+                spectral_cube = hdus[1].data.field(0).T
             else:
                 # one column per energy: expect len(energies) columns
-                if len(energies)>0:
-                    assert len(hdu1.columns)==len(energies) , 'wrong number of columns'
-                spectra = np.vstack([col.array for col in data.columns])
-       
-                nside = int(np.sqrt(data.field(0).flatten().shape[0]/12.))
+                spectral_cube = np.vstack([col.array for col in data.columns])
+ 
+            nside = int(np.sqrt(spectral_cube.shape[0]/12.))
+            assert spectral_cube.shape[0]==len(energies), 'shape inconsistent with number of energies'
+     
+            unit = hdu1.header.get('BUNIT', '')
 
-                    
-            # construct colorbar label for Latex
-            bunit = hdu1.header.get('BUNIT', '')
-            unit = bunit.replace(' ', '\\ ')
-            cblabel = fr'$\mathrm{{ {unit} }}$'
             assert hdu1.header.get('ORDERING','RING')=='RING', 'Wrong ordering'
             assert hdu1.header.get('COORDSYS', 'GAL')=='GAL', 'Wrong coordsys'
                 
@@ -187,7 +178,7 @@ class HPcube(HPmap):
             print(f'bad file or unexpected FITS format, file {filename}: {msg}')
             raise
         hdus.close()
-        return cls(maps, energies, cblabel=cblabel, bunit=bunit) # layer_names, column_names, label, cblabel)
+        return cls(spectral_cube, energies, unit=unit) 
 
 
     def to_FITS(self, outfile, overwrite=True):
@@ -195,8 +186,8 @@ class HPcube(HPmap):
         def spectral_table(self):
             array = np.vstack([x.map for x in self]).T
             el = self.energies
-            column = fits.Column(name='spetra', format=f'{len(el)}E',
-                        unit=self.bunit, array=array)
+            column = fits.Column(name='spectra', format=f'{len(el)}E',
+                        unit=getattr(self, 'unit',''), array=array)
             table = fits.BinTableHDU.from_columns([column])
             table.name = 'SKYMAP' 
             # add HEALPix and energy info to the header 
@@ -204,17 +195,20 @@ class HPcube(HPmap):
 
             emin, deltae= el[0], np.log(el[1]/el[0])
             cards = [fits.Card(*pars) for pars in [ 
+                    ('FIRSTPIX',  0,             'First pixel (0 based)'),
+                    ('LASTPIX',  array.shape[0], 'Last pixel (0 based)'),
+                    ('MAPTYPE'   'Fullsky'   ),
                     ('PIXTYPE',  'HEALPIX',      'Pixel algorithm',),
                     ('ORDERING', 'RING',         'Ordering scheme'),
                     ('NSIDE' ,    self.nside,    'Resolution Parameter'),
-                    ('FIRSTPIX',  0,             'First pixel (0 based)'),
-                    ('LASTPIX',  array.shape[0], 'Last pixel (0 based)'),
+                    ('ORDER',     int(np.log2(self.nside)),   'redundant'),
                     ('INDXSCHM', 'IMPLICIT' ,''),
-                    ('OBJECT' ,  'FullSky', ''),                                                            
-                    ('COORDSYS', 'GAL', ''),
+                    ('OBJECT' ,  'FULLSKY', ''),
                     ('NRBINS',   array.shape[1], 'Number of energy bins'),
+                    ('COORDSYS', 'GAL', ''),
                     ('EMIN',     emin,           'Minimum energy'  ),
                     ('DELTAE',   deltae,         'Step in energy (log)'),
+                    ('BUNIT',    getattr(self,'unit', ''), ''),
                 ]]
             for card in cards: table.header.append(card)
             return table
@@ -295,7 +289,6 @@ def ait_plot(mapable,
 
     # code inspired by https://stackoverflow.com/questions/46063033/matplotlib-extent-with-mollweide-projection
 
-
     # make a mesh grid
     nx, ny = 360//pixelsize, 180//pixelsize
     lon = np.linspace(-180, 180, nx)
@@ -323,6 +316,23 @@ def ait_plot(mapable,
     if label:   
         ax.text( 0.02, 0.95, label, transform=ax.transAxes)
     if title:
-        plt.suptitle(title)
+        plt.suptitle(title, fontsize=12)
 
 
+def ait_multiplot(mapable, 
+        energies, 
+        labels, 
+        layout:'like 22 for 2x2', 
+        fig=None, 
+        title=None,         
+        **kwargs ):
+
+    fig = fig or plt.figure( figsize=(15,8), num=1)
+    kw = dict(fig=fig, **kwargs)
+    
+    axes_pos = 10*layout+1
+    for i, (energy, label) in enumerate(zip(energies, labels)):
+        ait_plot(mapable,  energy,  label=label, axes_pos=axex_pos+i, **kw)
+
+    fig.tight_layout()
+    if title: fig.suptitle(title, fontsize=16);
