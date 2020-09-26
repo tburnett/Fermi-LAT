@@ -10,10 +10,14 @@ from . skydir import SkyDir
 
 
 class HPmap(object):
-    def __init__(self, map, label='', cblabel=''):
+    def __init__(self, 
+            hpmap:'HEALPix array',
+            label='', cblabel=''):
+        """create from a HEALPix array
+        """
         self.label=label
-        self.nside = healpy.get_nside(map)
-        self.map = map
+        self.nside = healpy.get_nside(hpmap)
+        self.map = hpmap
         self.cblabel = cblabel
 
         # set up interpolation
@@ -27,6 +31,16 @@ class HPmap(object):
         """
         skyindex = skydir.to_healpix(nside=self.nside)
         return self.map[skyindex]
+
+    @classmethod
+    def from_HPmap(cls, 
+            other:'an existing HPmap object to resample', 
+            nside,
+            label:'override label of other'='',
+            cblabel=''):
+        skydir = SkyDir.from_healpix(range(12*nside**2))
+        return cls(other(skydir), label=label or other.label, cblabel=cblable or other.cblabel)
+
 
     def ait_plot(self,  **kwargs):
         ait_plot(self, label=self.label, cblabel=self.cblabel, **kwargs)
@@ -46,10 +60,23 @@ class HPcube(HPmap):
                     energies:'corresponding energies',
                     cblabel='', 
                     energy:'default value'=1000,
-                    unit:'units'=''
+                    unit:'units'='',
+                    sigma:'somothing parameter (deg)'=0, 
                      ):
-        self.spectra = spectral_cube
-        self.nside = healpy.get_nside(self.spectra[0])
+        sh = spectral_cube.shape
+        assert len(sh)==2, 'Expect 2-d array'
+        # transpose if needed               
+        self.spectra = spectral_cube.T if sh[0]>sh[1] else spectral_cube
+        
+        try:
+            self.nside = healpy.get_nside(self.spectra[0])
+        except TypeError:
+            print(f'shape {sh} not compatible with HEALPix', outfile=sys.stderr)
+            raise
+        if sigma>0:
+            # use the healpy smoothing function
+            self.spectra = np.array(list(map(lambda m: healpy.smoothing(m,np.radians(sigma),
+                    verbose=False),  self.spectra)))
         self.maps = list(map(HPmap, self.spectra))
         self.energies = energies
         self.unit = unit
@@ -76,6 +103,10 @@ class HPcube(HPmap):
     def __iter__(self): # iterate over all keys
         for index in range(len(self)):
             yield self[index]
+
+    @property
+    def spectral_cube(self):
+        return np.array([layer.map for layer in self])
 
     def ait_plot(self, index, **kwargs):
         if type(index)==int:
@@ -109,20 +140,25 @@ class HPcube(HPmap):
     def __call__(self, skydir:'SkyDir', energy=None) -> 'value[s]':
         """
         """
-        if energy is not None and energy!=self.energy: 
-            self.set_energy(energy)
-
         skyindex = skydir.to_healpix(nside=self.nside)
-        a = self.energy_interpolation
-        u, v = self.eplane1[skyindex], self.eplane2[skyindex]
-        # avoid interpolation if close to a plane
-        if np.abs(a) < 1e-2:  # or v<=0 or np.isnan(v):
-            ret = u
-        elif np.abs(1-a)< 1e-2: # or u<=0 or np.isnan(u):
-            ret = v
+        if energy is None:
+            ee = [self.energy]
         else:
-            ret = np.exp( np.log(u) * (1-a) + np.log(v) * a  )
-        return ret
+            ee = np.atleast_1d(energy)
+        ret = []
+        for energy in ee:    
+            self.set_energy(energy)    
+            a = self.energy_interpolation
+            u, v = self.eplane1[skyindex], self.eplane2[skyindex]
+            # avoid interpolation if close to a plane
+            if np.abs(a) < 1e-2:  # or v<=0 or np.isnan(v):
+                w = u
+            elif np.abs(1-a)< 1e-2: # or u<=0 or np.isnan(u):
+                w = v
+            else:
+                w = np.exp( np.log(u) * (1-a) + np.log(v) * a  )
+            ret.append(w)
+        return ret[0] if len(ee)==1 else np.array(ret)
 
     def hpmap(self, energy, label=''):
         """ return an HPmap for the given energy
@@ -180,6 +216,17 @@ class HPcube(HPmap):
         hdus.close()
         return cls(spectral_cube, energies, unit=unit) 
 
+    # @classmethod
+    # def from_cube(cls, 
+    #         other:'anohter HPcube',
+    #         nside, 
+    #         energies):
+
+    #     cube = other
+
+
+
+
 
     def to_FITS(self, outfile, 
             vector_format:'if True, one-column format'=False, 
@@ -234,15 +281,20 @@ class HPcube(HPmap):
                     ]
             return fits.PrimaryHDU(header=fits.header.Header(cards))
 
-        def hdu_list(self):
-            return [ primary(self),  #primary
+        # def hdus(self):
+        #     return [ primary(self),  #primary
+        #             spectral_table(self),           # this table
+        #             energy_table(self),
+        #         ]
+      
+
+        hdu_list = fits.HDUList( 
+                [   primary(self),  #primary
                     spectral_table(self),           # this table
                     energy_table(self),
-                ]
-
-        hdus = hdu_list(self)
-
-        fits.HDUList(hdus).writeto(outfile, overwrite=overwrite)
+                ])
+        hdu_list.writeto(outfile, overwrite=overwrite)
+        hdu_list.close()
         print( f'\nwrote {"vector format" if vector_format else ""} '\
             f'FITS Skymap file, nside={self.nside}, {len(self.energies)} energies, to {outfile}')
 
@@ -282,7 +334,7 @@ class HPproduct(HPcubeOp):
         self.set_energy(energy)
         return self.map1(skydir,self.energy) * self.map2(skydir,self.energy)
 
-def ait_plot(mapable, 
+def ait_plot(mappable, 
         pars=[],
         label='',        
         title='',
@@ -301,7 +353,6 @@ def ait_plot(mapable,
     """
     """
     #  
-    # healpy.mollview(self.column(energy), **kwargs)
 
     # code inspired by https://stackoverflow.com/questions/46063033/matplotlib-extent-with-mollweide-projection
 
@@ -313,11 +364,11 @@ def ait_plot(mapable,
 
     #  an arrary of values corresponding to the grid
     dirs = SkyDir.from_galactic(Lon, Lat)
-    arr = mapable(dirs, *np.atleast_1d(pars))
+    arr = mappable(dirs, *np.atleast_1d(pars))
 
     if ax:
         fig = ax.figure
-        assert ax.__class____name__=='AitoffAxesSubplot'
+        assert ax.__class__.__name__=='AitoffAxesSubplot'
     else:
         fig = plt.figure(figsize=(12,5)) if fig is None else fig
         # this needs to be more flexible
@@ -333,51 +384,87 @@ def ait_plot(mapable,
         cb_kw.update(label=cblabel)
         cb = plt.colorbar(im, ax=ax, **cb_kw) 
     ax.grid(color='grey')  
-    if label:   
+    if label:
         ax.text( 0.02, 0.95, label, transform=ax.transAxes)
     if title:
         plt.suptitle(title, fontsize=12)
 
 
-def ait_multiplot(mapable, 
-        energies, 
-        labels, 
-        layout:'like 22 for 2x2', 
-        fig=None, 
-        title=None,         
+def ait_multiplot(
+        mappable:'either an HPCube, or list of HPmap objects', 
+        energies:'energies to evaluate the HPcube'=None, 
+        labels:'list of labels'=[], 
+        fignum=None,
+        cmap='jet', 
+        vmin=None, vmax=None, 
+        log=False,
+        colorbar=True,
+        nx:'number of columns'=2,
+        title:'used for suptitle'='',         
         **kwargs ):
 
-    fig = fig or plt.figure( figsize=(15,8), num=1)
-    kw = dict(fig=fig, **kwargs)
+    if energies is not None:
+        n = len(energies)
+    else:
+        mappable = np.atleast_1d(mappable)
+        n = len(mappable)
+    if len(labels)==0:
+        labels=['']*n    
+ 
+    ny = (n+nx-1)//nx
+    sizey = 0.5 + 3.5*ny #[4.0, 7.5, 11, 14.5, 18][ny-1]
+    kw = dict(cmap=cmap, vmin=vmin, vmax=vmax, log=log, colorbar=colorbar,cb_kw=dict(shrink=0.7))
     
-    axes_pos = 10*layout+1
-    for i, (energy, label) in enumerate(zip(energies, labels)):
-        ait_plot(mapable,  energy,  label=label, axes_pos=axex_pos+i, **kw)
+    fig, axx = plt.subplots(ny,nx, figsize=(14, sizey), num=fignum,
+            gridspec_kw={'wspace':0.05, 'hspace':0.0,'left':0.0, 'top':0.9},
+            subplot_kw=dict(projection='aitoff'), )
+    
+    #fig.tight_layout()
+    
+    if energies is not None:
+        for ax, energy, label in zip(axx.flatten(), energies, labels):
+            ait_plot(mappable,  energy,  ax=ax,  label=label, **kw)
+            # cbtext = kwargs.get('cbtext', kwargs.get('cblabel', '')) 
 
-    fig.tight_layout()
-    if title: fig.suptitle(title, fontsize=16);
+    else:
+        for m, ax, label in zip(mappable, axx.flatten(), labels):
+            ait_plot(m,  ax=ax,  label=label, **kw)
+
+    if title: fig.text(0.4, 0.92, title, fontsize=16, ha='center');
+    fig.set_facecolor('white')
+    return fig
+        
 
 
 class Polyfit(object):
-    """ Manage a log polynomral fit to each pixel
+    """ Manage a log polynormal fit to each pixel
     """
     def __init__(self, 
-        cubefile, sigsfile, start=0, stop=8, deg=2,limits=(0.5,25)):
+        cubefile, sigsfile=None, start=0, stop=8, deg=2, limits=(0.5,25)):
         """
         """
         
-        m = HPcube.from_FITS(cubefile)
-        msig = HPcube.from_FITS(sigsfile)
+        if type(cubefile)==str:
+            m = HPcube.from_FITS(cubefile)
+        else:
+            m = cubefile
+        
         self.nside= m.nside
         self.limits=limits
         
-        meas = np.array([m[i].map for i in range(8)])
-        sig  = np.array([msig[i].map for i in range(8)])
+        meas = m.spectral_cube 
+
+        if sigsfile:
+            msig = HPcube.from_FITS(sigsfile)
+            sig  = msig.spectral_cube # if msig else np.ones(meas.shape)#np.array([msig[i].map for i in range(8)])
+            weights = 100./sig[start:,:] #from percent
+            self.wtmean = weights.mean(axis=1)
+        else:
+            # actual numbers 
+            self.wtmean = np.array([ 66.4 ,92.33, 129.35, 121.26,  93.3 ,  64.26,  41.42,  25.74])
 
         self.planes = np.array(range(start,stop)) # plane numbers
         self.values = meas[start:,:]
-        weights = 100./sig[start:,:] #from percent
-        self.wtmean = weights.mean(axis=1)
 
         self.fit, self.residuals, self.rank, self.svals, self.rcond =\
             np.polyfit(self.planes,self.values, deg=deg, full=True, w=self.wtmean)
@@ -469,3 +556,17 @@ class Polyfit(object):
         fig.suptitle(title, fontsize=16); 
         fig.set_facecolor('white')
            
+    def ait_plots(self, fignum=1, title=''):
+        fig, axx = plt.subplots(2,2, figsize=(14, 7.5), num=None,
+                gridspec_kw={'wspace':0.05, 'hspace':0.0,'left':0.0, 'top':0.9},
+                subplot_kw=dict(projection='aitoff') )#, visible=False), )
+
+        for m, ax, label in zip(self, axx.flatten(), 
+                'curvature  slope intercept '.split()):
+           # ax.set_visible(True)
+            ait_plot(HPmap(m, label=label) ,ax=ax, label=label,cb_kw=dict(shrink=0.7) )
+        ait_plot(HPmap( self.residuals,label='residuals'),  ax=axx[1,1],label='residuals')
+        if title: 
+            fig.text(0.4, 0.92, title, fontsize=16, ha='center')
+        fig.set_facecolor('white')
+        return fig

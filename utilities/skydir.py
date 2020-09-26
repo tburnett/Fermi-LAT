@@ -41,6 +41,9 @@ class SkyDir(object):
     @classmethod
     def from_galactic(cls, l, b) -> 'SkyDir':
         return cls(l, b, frame='galactic')
+    @classmethod
+    def gal(cls, l, b) -> 'SkyDir':
+        return cls(l, b, frame='galactic')
 
     def to_healpix(self, nside=None) ->'List of pixels':
         if nside is None:
