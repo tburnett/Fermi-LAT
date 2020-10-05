@@ -216,13 +216,22 @@ class HPcube(HPmap):
         hdus.close()
         return cls(spectral_cube, energies, unit=unit) 
 
-    # @classmethod
-    # def from_cube(cls, 
-    #         other:'anohter HPcube',
-    #         nside, 
-    #         energies):
-
-    #     cube = other
+    @classmethod
+    def from_cube(cls, 
+            other:'anothter HPcube',
+            nside:'new nside or get from other'=None, 
+            sigma:'smoothing sigma in deg'=0,
+            energies:'energies or get from other'=None,
+            ):
+        """create from an existing HPcube to change nside, energies, and/or smooth
+        """
+        assert isinstance(other, HPcube), 'Expected an HPcube object'
+        
+        nside = nside or other.nside
+        energies = energies or other.energies
+        sd_list = sd = SkyDir.from_healpix(range(12*nside**2), nside=nside)
+        resampled = other(sd_list, energies)
+        return cls(resampled, energies, sigma=sigma) 
 
 
 
@@ -379,7 +388,7 @@ def ait_plot(mappable,
     im = ax.pcolormesh(-np.radians(Lon), np.radians(Lat), arr, 
         norm=colors.LogNorm() if log else None,
         cmap=cmap,  vmin=vmin, vmax=vmax)
-    ax.set(xticklabels=[], yticklabels=[])
+    ax.set(xticklabels=[], yticklabels=[], visible=True)
     if colorbar:
         cb_kw.update(label=cblabel)
         cb = plt.colorbar(im, ax=ax, **cb_kw) 
@@ -395,10 +404,13 @@ def ait_multiplot(
         energies:'energies to evaluate the HPcube'=None, 
         labels:'list of labels'=[], 
         fignum=None,
+        sizex=14,
+        sizey=None,
         cmap='jet', 
         vmin=None, vmax=None, 
         log=False,
         colorbar=True,
+        cb_shrink=0.7,
         nx:'number of columns'=2,
         title:'used for suptitle'='',         
         **kwargs ):
@@ -412,12 +424,12 @@ def ait_multiplot(
         labels=['']*n    
  
     ny = (n+nx-1)//nx
-    sizey = 0.5 + 3.5*ny #[4.0, 7.5, 11, 14.5, 18][ny-1]
-    kw = dict(cmap=cmap, vmin=vmin, vmax=vmax, log=log, colorbar=colorbar,cb_kw=dict(shrink=0.7))
+    sizey = sizey or  (0.5 + 3.5*ny)  #[4.0, 7.5, 11, 14.5, 18][ny-1]
+    kw = dict(cmap=cmap, vmin=vmin, vmax=vmax, log=log, colorbar=colorbar,cb_kw=dict(shrink=cb_shrink))
     
-    fig, axx = plt.subplots(ny,nx, figsize=(14, sizey), num=fignum,
-            gridspec_kw={'wspace':0.05, 'hspace':0.0,'left':0.0, 'top':0.9},
-            subplot_kw=dict(projection='aitoff'), )
+    fig, axx = plt.subplots(ny,nx, figsize=(sizex, sizey), num=fignum,
+            gridspec_kw={'wspace':0.05, 'hspace':0.0,'left':0.2, 'top':0.9},
+            subplot_kw=dict(projection='aitoff',visible=False ))
     
     #fig.tight_layout()
     
@@ -440,7 +452,8 @@ class Polyfit(object):
     """ Manage a log polynormal fit to each pixel
     """
     def __init__(self, 
-        cubefile, sigsfile=None, start=0, stop=8, deg=2, limits=(0.5,25)):
+            cubefile:'either a filename or a spectral cube',
+            sigsfile=None, start=0, stop=8, deg=2, limits=(0.5,25)):
         """
         """
         
@@ -448,12 +461,10 @@ class Polyfit(object):
             m = HPcube.from_FITS(cubefile)
         else:
             m = cubefile
-        
-        self.nside= m.nside
+        meas = m.spectral_cube
+        self.nside=m.nside
         self.limits=limits
         
-        meas = m.spectral_cube 
-
         if sigsfile:
             msig = HPcube.from_FITS(sigsfile)
             sig  = msig.spectral_cube # if msig else np.ones(meas.shape)#np.array([msig[i].map for i in range(8)])
@@ -471,6 +482,20 @@ class Polyfit(object):
             
         labels= 'intercept slope curvature'.split()   
         
+    @classmethod
+    def from_product(cls, cf1, cf2, 
+                nside=64, 
+                log_energy_range=(2.125, 3.875, 8)):
+        """ Product of two PolyFit objects
+        """
+        # make a spectral cube of the two PolyFit guys, assumog nside and energies
+        nside=64
+        coords  = SkyDir.from_healpix(range(12*nside**2), nside)
+        energies = np.logspace(*log_energy_range)
+        cube = np.vstack([cf1(coords, energy)*cf2(coords,energy) for energy in energies ])
+
+        return cls(HPcube(cube, energies=energies))
+
     def __getitem__(self, i):
         return self.fit[i]
 
@@ -480,9 +505,6 @@ class Polyfit(object):
         energy = np.atleast_1d(energy)
         return 4*np.log10(energy/100)-0.5
     
-#     def ait_plots(self):
-#         self.hpfit=[healpix_map.HParray(labels[deg-i], self.fit[i,:]) for i in range(deg,-1,-1)]
-#         healpix_map.multi_ait(self.hpfit, cmap=plt.get_cmap('jet'),  grid_color='grey')
 
     def __call__(self, 
                 coord: 'SkyDir', 
