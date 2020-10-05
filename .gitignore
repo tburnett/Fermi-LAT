@@ -1,4 +1,9 @@
 .ipynb_checkpoints
 .html
-.notebooks
-._pycache_
+*.notebooks
+*_pycache_*
+*.png
+*.jpg
+*.figs
+*.fits
+

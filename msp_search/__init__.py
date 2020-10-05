@@ -1,0 +1,3 @@
+
+docspath = '../../docs'
+
