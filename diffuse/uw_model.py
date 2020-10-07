@@ -67,7 +67,7 @@ class CheckRatio(DocPublisher):
          and smoothed with a sigma of ${sigma}^\circ$.
 
         ## UW - nopatch ratio
-        This should be close the the factor cube used to derive the UW model
+        This should be close to the the factor cube used to derive the UW model
         {fig1}
         
         ## UW - gal_v07 ratio
@@ -123,8 +123,9 @@ class CheckRatio(DocPublisher):
 
         fig1 =  healpix.ait_multiplot( self.ratio_cube, energies, 
             labels=self.band_labels,
-            nx=4, cb_shrink=0.6,sizey=4, 
-            fignum=1, title=rf'Ratio of gal_uw to nopatch')
+            nx=4, cb_shrink=0.7, sizex=16,sizey=4,  
+            fignum=1,vmin=1, vmax=3)
+        fig1.caption= rf'Ratio of gal_uw to nopatch'
 
 
         # same with this ratio
@@ -134,7 +135,8 @@ class CheckRatio(DocPublisher):
         fig2 =  healpix.ait_multiplot( rc64x, energies, labels=self.band_labels,
             nx=4, cb_shrink=0.6,sizey=4, 
             vmin=0.75, vmax=1.25,
-            fignum=2, title=rf'Ratio of gal_v07 to gal_uw')
+            fignum=2,)
+        fig2.caption=rf'Ratio of gal_v07 to gal_uw'
 
         #----------------
         self.publishme()
@@ -166,8 +168,10 @@ class CheckRatio(DocPublisher):
         self.ratio_cube_v2=rcube64 
         
         fig4 =  healpix.ait_multiplot(rcube64, energies, labels=self.band_labels,
-            nx=4, cb_shrink=0.6,sizey=4,  
-            fignum=4, title=rf'Count ratios of v2/v0', vmin=0.9, vmax=1.1)
+            #nx=4, cb_shrink=0.6,sizey=4, 
+            nx=4, cb_shrink=0.6, sizex=20, sizey=6, 
+            fignum=4, vmin=0.9, vmax=1.1)
+        fig4.caption = 'Ratios of predicted counts of model v2 to model v0.'
         #---------------
         self.publishme()
 
@@ -190,7 +194,7 @@ class CheckRatio(DocPublisher):
         cubefitv2 = healpix.Polyfit(self.ratio_cube_v2)
                     
         self.ratio_cubicfit_v2 = cubefitv2
-        fig5 = cubefitv2.ait_plots(fignum=5);
+        fig5 = cubefitv2.ait_plots(fignum=5)
         
         fig6, ax6 = plt.subplots(figsize=(4,3), num=6)
         cubefitv2.plot_fit(0,-50, ax=ax6)
@@ -261,13 +265,13 @@ class CheckRatio(DocPublisher):
 
 class UWdiffuseModel(DocPublisher):
     """
-    title:  Release of the UW-derived Diffuse Model \n
+    title:  The UW Galactic Diffuse Model \n
          Version {version}
 
     author: Toby Burnett
 
 
-    sections:   introduction galactic [flux_factor_cube apply_factors ] isotropic summary
+    sections:   introduction galactic [flux_factor_cube dm7_comparison apply_factors ] isotropic summary
 
     fermi_path: '/home/burnett/fermi'
     nopatch_diffuse_file: 'diffuse/test_model_InnerGalaxyYB01_test512_interp_nopatch.fits'
@@ -278,6 +282,7 @@ class UWdiffuseModel(DocPublisher):
     iso_path:  '/home/burnett/fermi/diffuse/isotropic_uw/'
     outfiles: ['gll_iem_uw_*.fits',  'gll_iso_uw_*.txt' ]
     slac_uw_path: '/nfs/farm/g/glast/g/catalog/pointlike/fermi/diffuse/uw'
+    local_uw_path: '/home/burnett/fermi/diffuse/uw'
     """
     
     def __init__(self, **kwargs):
@@ -368,17 +373,30 @@ class UWdiffuseModel(DocPublisher):
         This is not exactly the patch for the released model since there is not a "no-patch" version of it&mdash;
         this is responsible for the high-latitude spots.)
 
-        Here it is at 1 GeV and 1 TeV, with the portions below 1.1 blanked out. 
+        Here it is at 1 GeV and 1 TeV, with the portions below 1.1 blanked out to emphasize the limited extend. 
+        (Portions outside the boundaries would be exactly 1.0 if 
+        there were a no-patch version of DM7.) 
         {fig1}
-        Note that there are spots at 1 TeV where the patch exceeds a ratio of 50.
-        """
+        Note that there are spots at 1 TeV where the patch exceeds a ratio of **50**. 
 
+        And here, from the factor cube used by the UW model, also at 1 GeV and 1 TeV:
+        {fig2}
+
+        Note that at high energies the patch dominates the flux. So, which is a better representation of the data?
+        """
+        self.dm7 = dm= HPcube.from_FITS(os.path.join(self.fermi_path, self.diffuse_v07))
         cube7 = self.dm7.spectral_cube
         cubex = self.dmx.spectral_cube
+        r = cube7/cubex
+        z = r<1.1
         r[z]=np.nan
         ratio_cube = HPcube(r, self.dm7.energies)
+        fig1 = healpix.ait_multiplot(ratio_cube, [1e3, 1e6], labels=['1 GeV', '1 TeV'], fignum=1, vmin=1, vmax=None)
         fig1.caption=f'Ratio of the diffuse model DM7 to the test model {self.test_model_name},'\
             ' at 1 GeV and 1 Tev, showing portions above 1.1'
+        
+        fig2 = ait_multiplot(self.pf, energies=(1e3, 1e6), labels = ['1 GeV', '1 TeV'], fignum=2, vmin=1, vmax=None)
+        fig2.caption=f'Evaluation of the UW "factor cube" at 1 GeV and 1 TeV'
 
         #---------------
         self.publishme()
@@ -386,7 +404,7 @@ class UWdiffuseModel(DocPublisher):
     def apply_factors(self):
         """Application of the factor cube
 
-        I derive an equivalent diffuse model by simply multiply the flux by the factor. This is equivalent to the way the pointlike all-sky system treated the two factors, so should give equivalent results. 
+        I derive an equivalent diffuse model by simply multiplying the flux by the factor. This is equivalent to the way the pointlike all-sky system treated the two factors, so should give equivalent results. 
 
         The class which performs the quadratic fit to the individual planes also implements what I call a "sky function". 
         That is, it defines a member function `__call__(coord, energy)` where:
@@ -430,11 +448,14 @@ class UWdiffuseModel(DocPublisher):
         scube=np.vstack( [a(skygrid, energy)*b(skygrid, energy) for energy in energies])
         self.dmuw = HPcube(scube, energies, unit) 
 
+        
         outfile = self.outfiles[0]
-        self.dmuw.to_FITS(outfile)
-        lsfile = self.shell(f'ls -l {outfile}')
+        local_outfile = os.path.join(self.local_uw_path, outfile)
+        self.dmuw.to_FITS(local_outfile)
+        lsfile = self.shell(f'ls -l {local_outfile}')
 
-        with ftp.SLAC(self.slac_uw_path, '.' ) as slac:
+        print(f'copying to SLAC @ {self.slac_uw_path}...')
+        with ftp.SLAC(self.slac_uw_path, self.local_uw_path) as slac:
             slac.put(outfile, outfile)
         #---------------
         self.publishme()

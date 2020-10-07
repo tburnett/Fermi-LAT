@@ -67,7 +67,7 @@ class SLAC(object):
                 self.svr.put(locf, f) 
                 if not quiet: print(f'ftp: {locf} -> {f}')
             except Exception as msg:
-                print(f'ftp put, {locf}->{f} failed: {msg}', out=sys.stderr)
+                print(f'ftp put, {locf}->{f} failed: {msg}', file=sys.stderr)
                 raise
 
         if not_connected: self.close()

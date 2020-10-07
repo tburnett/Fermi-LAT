@@ -19,7 +19,7 @@ class Report(DocPublisher):
 
     author: Toby Burnett
 
-    sections : introduction all_sky # test
+    sections : introduction all_sky sources
 
     slac_path: '/nfs/farm/g/glast/g/catalog/pointlike/skymodels/'
     local_path: '/tmp/skymodels/'
@@ -62,20 +62,20 @@ class Report(DocPublisher):
         Introduction
 
         This a a report on the UW all-sky model {self.skymodel}. 
-        I compile plots from the SLAC folder contain all its files:
+        I compile plots from the SLAC folder containing all its files:
         
          `{self.slac_path}`
         
         The plots are directly accessible from the 
-        [decorator site](self.decorator).
+        [decorator site]({decorator}).
 
-        <br>Local path ({self.local_path}) contents:
+       
         {dir_info}
 
         """
+        decorator = self.decorator_path.format(self.slac_path)
 
-
-        dir_info = self.shell(f'ls -l {self.local_path}/plots')
+        dir_info = self.shell(f'ls -l {self.local_path}/plots', summary=f' <br>Local path ({self.local_path}) contents:')
 
         #---------
         self.publishme()
@@ -122,28 +122,70 @@ class Report(DocPublisher):
             width=600, caption='')
         residual_hist = self.image(self.jpg_name('residual_maps/residual_hist'),width=400)
 
- 
-        
         #---------
         self.publishme()
     
-    def test(self):
-        """Test plots
-        
-        {chisq}
+    def sources(self):
+        """Sources
 
-  
-        {residual_maps_ait}
-        {residual_hist}
+        Each source is carefully fit to either a log-parabola or power-law with cutoff. 
 
-        {}
+        #### Cumulative TS
+        {cumulative_ts}
+
+        ### Fit quality
+        {fit_quality}
+
+        #### Low-energy fit consistency
+        {spectral_fit_consistency_plots}
+
+        #### Localization convergence
+      
+        The 'finish' stage of creating a model runs the localization code to check that the current position is still appropriate.
+         This is measured by the change in the value of the TS at the best fit position. The position is only updated based on this
+         information at the start of a new series of interations.
+        {localization}
+
+        #### Localization precision
+        The association procedure records the likelihood ratio for consistency of the associated location with the fit location, expressed as a TS, or the difference in the TS for source at the maximum, and at the associated source. The distribution in this quantity should be an exponential, $\exp{{-\\Delta TS/2/f^2}}$, where $f$ is a scale factor to be measured from the distribution. If the PSF is a faithful representation of the distribution of photons from a point source, $f=1$. For 1FGL and 2FGL we assumed 1.1. The plots show the results for AGN, LAT pulsars, and all other associations. They are cut off at 9, corresponding to 95 percent containment.
+
+        Cuts: TS>100, Delta TS<9, localization quality <5
+
+        Applied systematic factor: 1.03 (1.37 if $|b|<5)$ and 0.45 arcmin added in quadrature with r95.
+
+        {localization_check}
+
+
+
         """
-        width=600
-        chisq = self.image( self.jpg_name('counts/chisq_plots'), width=400, caption='Chi squared')
+        width=300
+        nc_sources  = (
+            ('cumulative_ts', 'Cumulative TS', 400),
+            ('fit_quality', 'Fit quality. Left: Power-law fits. Tails in this distribution perhaps could be improved by changing the curvature parameter.Center: Log parabola fits.Right: Fits for the pulsars, showing high latitude subset. ', 600),
+            ('spectral_fit_consistency_plots', 'Low energy spectral consistency.', 600), 
+            ('pivot_vs_e0', 'Measured pivot vs. current E0.', 600),  
+        )
+        nc_localization = (
+            ('localization', 'Left: histogram of the square root of the TS difference from current position to the fit;'\
+                    ' corresponds the number of sigmas. Right: scatter plot of this vs. TS', 600),
 
-        residual_maps_ait = self.image(self.jpg_name('residual_maps/residual_maps_ait'),
-            width=400)
-        residual_hist = self.image(self.jpg_name('residual_maps/residual_hist'),width=400)
-        #--------------
+        )
+        nc_associations = (
+            ('localization_check', '', 800),
+
+        )
+        locs = locals()
+        def add_images(nc, analysis='sources'):
+            for name, caption, width in nc:
+                file = self.jpg_name(f'{analysis}/{name}')
+                assert os.path.exists(file), f'{file} ?'
+                image = self.image(file, width=width, caption=caption)
+                locs[name] = image
+        add_images(nc_sources)
+        add_images(nc_localization, 'localization')
+        add_images(nc_associations, 'associations')
+
+
+        #---------
         self.publishme()
 

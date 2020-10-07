@@ -394,7 +394,7 @@ def ait_plot(mappable,
         cb = plt.colorbar(im, ax=ax, **cb_kw) 
     ax.grid(color='grey')  
     if label:
-        ax.text( 0.02, 0.95, label, transform=ax.transAxes)
+        ax.text( 0., 0.97, label, transform=ax.transAxes)
     if title:
         plt.suptitle(title, fontsize=12)
 
