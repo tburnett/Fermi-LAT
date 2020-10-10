@@ -91,12 +91,16 @@ class SLAC(object):
                 self.svr.chdir(self.remote_path)
         except Exception as msg:
             print(f'chdir failed to {self.remote_path}: {msg}', file=sys.stderr)
+            raise
 
     def listdir(self, remote_path=''):
         if self.svr is None:
             print(f'Not connected')
             return
-        return self.svr.listdir(remote_path)
+        try:
+            return self.svr.listdir(remote_path)
+        except Exception as msg:
+            print(f'Failded listdir({remote_path}) in {self.remotepath}: {msg}', file= sys.stderr)
 
     def close(self): 
         if self.svr: self.svr.close()
