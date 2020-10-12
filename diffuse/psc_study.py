@@ -105,7 +105,7 @@ class PSCstudy(DocPublisher):
         These represent a measurement, using a consistent set of point- and extended sources, of corrections to the 
         galactic diffuse model `{self.diffuse_files[0]}`.
         
-        ## Positions of the {N} ROIs. 
+        ### Positions of the {N} ROIs. 
         The color represents the size.       
         {fig1}
         The locations and sizes were adjusted to limit the number of variable sources per ROI. 
@@ -115,23 +115,31 @@ class PSCstudy(DocPublisher):
         through the bubbles and Loop I. The latter features are not part of the galactic model, but were presumably accounted for by the "patch" component 
         derived using data.  
 
-        As a reminder, here are the patch factors from 
+        Remember that the patch extent was limited&mdash;here is an image of the counts for the 
+        lower energy band:
+        {patch_image}
+        The shaded areas in the following plots show 
+        the coverage. 
 
-        #### GC polar stripe
-        Select the ROIs around a meridian passing through the GC. 
-        
-        {fig2}
+        Figures {fig2.number} and {fig3.number} show, for the ROIs within the vertical or horizontal
+        stripes, the galactic flux, and the values of the three diffuse fit parameters. 
 
-        #### ROIs near the galactic plane
-        {fig3}
+               
+        <table>
+         <tr>  <td>{fig2}</td>   <td>{fig3}</td>    </tr>
+        </table>
 
+        Note the dramatic swings associated with the galactic ridge and especially the position of 
+        the south bubble.
         """
+  
         df = self.df
         N = len(df)
         roi_sd = SkyDir.gal(df.glon, df.glat)
+        plt.rc('font',  size=18)
 
         def roi_map(num):
-            fig = plt.figure(figsize=(10,6), num=num)
+            fig = plt.figure(figsize=(12,8), num=num)
             ax = fig.add_subplot(111, projection="aitoff")
             ax.grid(color='grey')
             im=ax.scatter(-np.radians(df.glon), np.radians(df.glat.clip(-87,88)), c = df.radius, cmap='jet')
@@ -139,6 +147,7 @@ class PSCstudy(DocPublisher):
             fig.set_facecolor('white')
             ax.set(xticklabels=[], yticklabels=[])#, xlabel='longitude', ylabel='latitude')
             fig.caption = '4FGL-DR2 ROI locations, with the color representing the ROI size.'
+            fig.width=400
             return fig
 
 
@@ -192,17 +201,22 @@ class PSCstudy(DocPublisher):
                 elif i==2: #galactic index
                     ax.plot( x, df.gal_index[stripe], 'o');
                     ax.axhline(0, color='grey')
-                    ax.set( ylabel='gal index', ylim=(-0.1,0.1))#, ylim=(0.5,1.1));
+                    ax.set( ylabel='gal index', ylim=(-0.15,0.15))#, ylim=(0.5,1.1));
                 elif i==3: #iso norm
                     ax.plot(x, df.iso_norm[stripe],'o');
                     ax.set( ylabel='iso norm', ylim=(0.4, 2.05), 
                     xlim=xlim, xlabel=xlabel, xticks=xticks)
             fig.caption = title   
-            fig.text( 0.03, 0.4, 'Diffuse parameters', va='center', rotation='vertical')
+            fig.text( 0.01, 0.4, 'Diffuse parameters', va='center', rotation='vertical')
             return fig
 
         fig1 = roi_map(num=1)
-        fig2 = stripe('Polar', num=2)
-        fig3 = stripe('Planar',num=3)
+
+        patch_image = self.image('/home/burnett/fermi/diffuse/XC04-patch.png', 
+            caption='Diffuse model id "XC04" patch component: counts for the 228 MeV band used to generate the model.', 
+            width=600)
+        
+        fig2 = self.figure(stripe('Polar', num=2), width=500)
+        fig3 = self.figure(stripe('Planar',num=3), width=500)
         #--------------
         self.publishme()

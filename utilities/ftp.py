@@ -39,6 +39,9 @@ class SLAC(object):
             files = [os.path.join(p,f) for f in found]
 
         for f in np.atleast_1d(files): 
+            _,fext = os.path.splitext(f)
+            if not fext: # should check directly for a folder
+                continue
             p,q = os.path.split(f)
             if p:
                 lp =  os.path.join(self.local_path,p)
@@ -100,7 +103,7 @@ class SLAC(object):
         try:
             return self.svr.listdir(remote_path)
         except Exception as msg:
-            print(f'Failded listdir({remote_path}) in {self.remotepath}: {msg}', file= sys.stderr)
+            print(f'Failded listdir({remote_path}) in {self.remote_path}: {msg}', file= sys.stderr)
 
     def close(self): 
         if self.svr: self.svr.close()

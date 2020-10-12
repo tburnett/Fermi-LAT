@@ -33,11 +33,11 @@ class Report(DocPublisher):
     
     def setup(self):
         if not self.version or self.version.split('.')[-1]=='Report':
-            self.skymodel = 'uw1208-v3'
+            self.skymodel = 'uw1210'
         else: self.skymodel = self.version
         mkey = self.skymodel[:4]
 
-        year = dict(uw12='P8_12years', uw89='P305_8years', uw90='P8-10years' )[mkey]
+        year = dict(uw12='P8_12years', uw86='P305_8years', uw90='P8_10years' )[mkey]
 
         self.slac_path = os.path.join(self.slac_path, year,self.skymodel)
         self.local_path = os.path.join(self.local_path, self.skymodel)
@@ -49,10 +49,16 @@ class Report(DocPublisher):
             self.plot_folders = folders = filter(lambda f:f.find('.')<0, slac.listdir('plots') )
             print(f'loading/checking folders to copy from SLAC:  ', end='')
             for folder in folders:
-                print(f'.. {folder} ', end='')
+                print(f', {folder} ', end='')
                 if not os.path.isdir(os.path.join(self.local_path, folder)):
                     slac.get(f'plots/{folder}/*')
-            print()
+            slac.get('config.yaml'); print(', config.yaml', end='')
+            slac.get('../config.yaml')
+            lp = self.local_path
+            shutil.move(os.path.join(lp, '../config.yaml'), 
+                    os.path.join(lp, 'super_config.yaml') )
+            print(', ../config.yaml -> super_config.yaml')
+                
 
     def jpg_name(self, plot_name:'name includes path under "plots"'):
         return os.path.join(self.local_path, 'plots',  f'{plot_name}_{self.skymodel}.jpg')
@@ -66,16 +72,26 @@ class Report(DocPublisher):
         
          `{self.slac_path}`
         
-        The plots are directly accessible from the 
-        [decorator site]({decorator}).
+        The plots are directly accessible from the  [decorator site]({self.decorator}).
 
-       
+        ### Configuration files: local, then superfolder
+
+        {config}
+        {super_config}
+        
         {dir_info}
 
         """
-        decorator = self.decorator_path.format(self.slac_path)
-
-        dir_info = self.shell(f'ls -l {self.local_path}/plots', summary=f' <br>Local path ({self.local_path}) contents:')
+               
+        config = self.shell(f'cat {self.local_path}/config.yaml',
+            summary='config.yaml' )
+        
+        super_config = self.shell(f'cat {self.local_path}/super_config.yaml',
+            summary='../config.yaml' )
+        
+            
+        dir_info = self.shell(f'ls -l {self.local_path}/plots', 
+                summary=f' Local path ({self.local_path}/plots) contents:')
 
         #---------
         self.publishme()
