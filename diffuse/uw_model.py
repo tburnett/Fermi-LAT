@@ -6,6 +6,7 @@ import shutil, pickle
 import numpy as np
 import pandas as pd 
 import matplotlib.pyplot as plt 
+import matplotlib
 from astropy.io import fits
 
 from utilities import SkyDir, HPmap, HPcube, ait_plot, ait_multiplot, Polyfit
@@ -22,7 +23,7 @@ class CheckRatio(DocPublisher):
     """
     title: Study the diffuse count ratios\n
          Version {version}
-    sections: get_counts [counts_v2] cube_comparison cubic_fit [cubic_fit_v2]
+    sections: get_counts [counts_v2] cube_comparison polyfit [polyfit_v2]
 
     slac_path:  '/afs/slac/g/glast/groups/catalog/pointlike/fermi/skymodels/P305_8years'
     slac_fermi_path: '/afs/slac/g/glast/groups/catalog/pointlike/fermi'
@@ -175,10 +176,10 @@ class CheckRatio(DocPublisher):
         #---------------
         self.publishme()
 
-    def cubic_fit_v2(self):
+    def polyfit_v2(self):
         """Cubic fit for v2
 
-        This is the log-cubic representation derived from versions v2/v0  spectral ratio:
+        This is the log-parabola representation derived from versions v2/v0  spectral ratio:
         {fig5}
 
         And also the spectrum and fit at $(0,-50)$:
@@ -191,20 +192,20 @@ class CheckRatio(DocPublisher):
         {fig8}
 
         """
-        cubefitv2 = healpix.Polyfit(self.ratio_cube_v2)
+        polyfitv2 = healpix.Polyfit(self.ratio_cube_v2)
                     
-        self.ratio_cubicfit_v2 = cubefitv2
-        fig5 = cubefitv2.ait_plots(fignum=5)
+        self.ratio_polyfit_v2 = polyfitv2
+        fig5 = polyfitv2.ait_plots(fignum=5)
         
         fig6, ax6 = plt.subplots(figsize=(4,3), num=6)
-        cubefitv2.plot_fit(0,-50, ax=ax6)
+        polyfitv2.plot_fit(0,-50, ax=ax6)
 
-        self.ratio_cubicfit = healpix.Polyfit.from_product(
-                        self.ratio_cubicfit,cubefitv2)
+        self.ratio_polyfit = healpix.Polyfit.from_product(
+                        self.ratio_polyfit,polyfitv2)
 
-        fig7 = self.ratio_cubicfit.ait_plots( fignum=7)
+        fig7 = self.ratio_polyfit.ait_plots( fignum=7)
         fig8, ax8 = plt.subplots(figsize=(4,3), num=8)
-        self.ratio_cubicfit.plot_fit(0,-50, ax=ax8)
+        self.ratio_polyfit.plot_fit(0,-50, ax=ax8)
         #--------
         self.publishme()
 
@@ -237,27 +238,27 @@ class CheckRatio(DocPublisher):
         #-----------
         self.publishme()
 
-    def cubic_fit(self):
-        r"""Log-Cubic fit to the ratio cube
+    def polyfit(self):
+        r"""Log-Parbola fit to the ratio cube
 
-        Given the curious artifacts in the ring at $60^\circ$ I will run the cubic analysis on the gal_uw to nopatch ratio spectra.
+        Given the curious artifacts in the ring at $60^\circ$ I will run the parabolic analysis on the gal_uw to nopatch ratio spectra.
 
         #### The dramatic south bubble at $(0,-50)$ is as before:
         {fig4}
 
-        #### The cubic fit parameters (in log space)
+        #### The fit parameters (in log space)
         {fig5}
         Note the residual map: most of the sky is fit quite well, with a slight problem 
         near the south bubble, and something worth looking at near the equatorial poles.
         """
 
-        cubefit = healpix.Polyfit(self.ratio_cube)
+        polyfit = healpix.Polyfit(self.ratio_cube)
                     
         fig4, ax4 = plt.subplots(figsize=(4,3), num=4)
-        cubefit.plot_fit(0,-50, ax=ax4)
+        polyfit.plot_fit(0,-50, ax=ax4)
 
-        fig5 = cubefit.ait_plots(fignum=5);
-        self.ratio_cubicfit = cubefit
+        fig5 = polyfit.ait_plots(fignum=5);
+        self.ratio_polyfit = polyfit
 
         #===========
         self.publishme()
@@ -283,13 +284,16 @@ class UWdiffuseModel(DocPublisher):
     outfiles: ['gll_iem_uw_*.fits',  'gll_iso_uw_*.txt' ]
     slac_uw_path: '/nfs/farm/g/glast/g/catalog/pointlike/fermi/diffuse/uw'
     local_uw_path: '/home/burnett/fermi/diffuse/uw'
+    copy_to_slac: True
+
     """
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.version = getattr(self,'version', 'x')
-        assert self.version=='v3', 'only support version v3'
+        assert self.version=='v4', 'only developing version v4'
         self.outfiles = list(map(lambda f:f.replace('*', self.version), self.outfiles))
+        self.dmx = dm= HPcube.from_FITS(os.path.join(self.fermi_path, self.nopatch_diffuse_file))
 
     def introduction(self):
         """Introduction
@@ -307,7 +311,6 @@ class UWdiffuseModel(DocPublisher):
         """
         #-------
         self.publishme()
-
     
     def galactic(self):
         """Galactic Component
@@ -321,11 +324,10 @@ class UWdiffuseModel(DocPublisher):
 
         {fig1}
 
-        """
-        self.dmx = dm= HPcube.from_FITS(os.path.join(self.fermi_path, self.nopatch_diffuse_file))
+        """    
         energies = np.logspace(2, 5, 4)
         labels = ['0.1 GeV', '1 GeV','10 GeV','100 GeV'] #list(map(lambda x: f'{x/1e3:.1f} GeV', energies))
-        fig1 = ait_multiplot(dm, energies, labels=labels, log=True, fignum=1)
+        fig1 = ait_multiplot(self.dmx, energies, labels=labels, log=True, fignum=1)
         fig1.caption = f'Flux for the "patchless" Galactic diffuse test model "{self.test_model_name}"'
      
         #---------------
@@ -343,7 +345,7 @@ class UWdiffuseModel(DocPublisher):
 
         That cube did not work so well, so I adopted a "reverse-engineering" approach, described in 
         <a href={link}>this document.</a>
-        The cube generated from the ratio of the "UW best" model and the "no patch" described above was fit to a log-cubic there,
+        The cube generated from the ratio of the "UW best" model and the "no patch" described above was fit to a log-parabola there,
         with these parameters:
 
         {fig4}
@@ -356,10 +358,10 @@ class UWdiffuseModel(DocPublisher):
         #otherdoc()
         #link = 'no link'
 
-        self.pf = otherdoc.ratio_cubicfit
+        self.pf = otherdoc.ratio_polyfit
         fig4 = self.pf.ait_plots( fignum=4)
 
-        fig4.caption = f'Log-cubic parameters from count ratios.'
+        fig4.caption = f'Log-parabola parameters from count ratios.'
         #---------------
         self.publishme()
 
@@ -402,7 +404,7 @@ class UWdiffuseModel(DocPublisher):
         self.publishme()
 
     def apply_factors(self):
-        """Application of the factor cube
+        r"""Application of the factor cube
 
         I derive an equivalent diffuse model by simply multiplying the flux by the factor. This is equivalent to the way the pointlike all-sky system treated the two factors, so should give equivalent results. 
 
@@ -412,51 +414,82 @@ class UWdiffuseModel(DocPublisher):
          * `energy` is one or more energies in MeV. 
 
          Both the class `HPcube` that implements a HEALPix spectral cube, and the factor cube described in the last 
-         section implement this 
-         interface. All-sky plots are easily generated by passing one of these objects, and an energy, 
+         section implement this interface. All-sky plots are easily generated by passing one of these objects, and an energy, 
          to my `ait_plot`.
 
-        This code shows how I multiply the DM7 model by the factor cube, representing the result with the 
-        DM7 set of 28 energy planes, but nside={nside}.        
-        The code to do this illustrates the power of this interface. In the example below `a` and  `b` are the two
-         `HPcube` objects representing the initial diffuse model and the factor cube
-        
-        ```
-        nside=256
-        skygrid = SkyDir.from_healpix(range(12*nside**2), nside=nside)
-        scube=np.vstack( [a(skygrid, energy) * b(skygrid, energy) for energy in a.energies] )
-        dmx = HPcube(scube, a.energies, a.unit) 
-        ```
+        ### Version v4:
 
-        The result is written to the local file `{outfile}` and copied to the SLAC folder {self.slac_uw_path}.
+        It has been pointed out, first by Jean Ballet, and subsequently emphasized by Gulli Johannesson, that the moultipicatve procedure
+        has an inadvertant effect of changing features with small angular scales, e.g., gas maps. The following procedure eliminates this:
 
-        ```        
-       
-        dmx.to_FITS(outfile)
-        ```
+        Let $F$ represent the patch-less flux cube, and $B$ the factor cube derived from the ROI correction factors.
+        Previously I multiplied the two cubes which was sufficient for catalog work. That is, I represented the
+        adjusted flux cube with the product $F \times B$. To avoid adjusting small-angle features in the original model, like the gas maps, 
+        I instead perform $F + S(F\times (B-1))$, where $S$ is a smoothing function, here a 2-D Gaussian with sigma ${sigma}^\\circ$.  
 
+        Here is the patch equivalent, the smoothed product of $F$ with $B-1$. Note since $B$ is not always >1, there are 
+        negative values, shown as black.
+
+        {patch_fig}
+
+        And the relative difference with the current standard:
+
+        {diff_1GeV}
+
+        The result is written to the local file `{outfile}` {copyto}.
+               
         {lsfile}
-
-        It was subsequently copied to SLAC at `{self.slac_uw_path}`
-        
+ 
         """
         a, b = self.dmx, self.pf
-        energies, unit = a.energies, a.unit
-        nside=256
-
+        # set up grid in position and energy
+        energies, unit, nside, sigma = a.energies, a.unit , 256, 2.5
         skygrid = SkyDir.from_healpix(range(12*nside**2), nside=nside)
-        scube=np.vstack( [a(skygrid, energy)*b(skygrid, energy) for energy in energies])
-        self.dmuw = HPcube(scube, energies, unit) 
 
-        
+        #old
+        #scube=np.vstack( [a(skygrid, energy)*b(skygrid, energy) for energy in energies])
+        #self.dmuw = HPcube(scube, energies, unit) 
+
+        #new: make a "patch" to be added rather then a factor -- and smooth it
+        pc = np.vstack( [a(skygrid, energy)*(b(skygrid, energy)-1) for energy in energies]) 
+        self.patch = patch = HPcube(pc, energies, unit, sigma=2.5)
+        t = patch.spectral_cube
+        t[t<=0]=np.nan
+        cmap = matplotlib.cm.get_cmap('jet')
+        cmap.set_bad(color='black')
+        positive_patch = HPcube(t, energies)
+
+        patch_fig = ait_multiplot(positive_patch, np.logspace(2,5,4), 
+            labels=['100 MeV', '1 GeV', '10 GeV', '100 GeV'], log=True, cmap=cmap, fignum=1)
+        patch_fig.caption=f'Maps of the "patch" flux as derived from the factor cube, smoothed with sigma ${sigma}^\circ$.'\
+                ' Black area show where the adjustment is negative.'
+
+        self.dmuw = HPcube( np.vstack([a(skygrid, energy) + patch(skygrid, energy) for energy in energies]) , energies, unit=unit)
+
+        class Diff(object):
+            def __init__(self,a,b):
+                self.a=a; self.b=b
+            def __call__(self, *pars):
+                return self.a(*pars)/self.b(*pars)-1
+        r = Diff(self.dm7, self.dmuw)
+        diff_1GeV, ax  = plt.subplots(figsize=(20,10), num=2, 
+            subplot_kw=dict(projection='aitoff',visible=False )) 
+        ait_plot(r, cmap='jet', vmin=-0.05, vmax=0.05, ax=ax, pixelsize=0.5)
+        diff_1GeV.caption='Relative difference between uw model and DM7 at 1 GeV'
+        diff_1GeV.width=800
+
         outfile = self.outfiles[0]
         local_outfile = os.path.join(self.local_uw_path, outfile)
         self.dmuw.to_FITS(local_outfile)
         lsfile = self.shell(f'ls -l {local_outfile}')
 
-        print(f'copying to SLAC @ {self.slac_uw_path}...')
-        with ftp.SLAC(self.slac_uw_path, self.local_uw_path) as slac:
-            slac.put(outfile, outfile)
+        copyto=', but not yet copied to SLAC'
+        if self.copy_to_slac:
+            print(f'copying to SLAC @ {self.slac_uw_path}...')
+            with ftp.SLAC(self.slac_uw_path, self.local_uw_path) as slac:
+                slac.put(outfile, outfile)
+            copyto='and copied to the SLAC folder `{self.slac_uw_path}`.'
+            
         #---------------
         self.publishme()
 
