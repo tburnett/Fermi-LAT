@@ -10,68 +10,104 @@ from utilities import ftp
 
 from jupydoc import DocPublisher
 
-__docs__ = ['Pulsars']
+__docs__ = ['MSPcandidates']
 
-class Pulsars(DocPublisher):
+class MSPcandidates(DocPublisher):
     """
-    title: MSP pulsar search
+    title: MSP pulsar search 
  
     author: Toby Burnett
     
-    sections: load_file get_candidates further_cuts sed_table
+    sections: introduction get_candidates 
+                further_cuts [ non_fgl_cuts in_fgl_cuts ]
+                sed_table [non_4fgl_seds in_4fgl_seds ]
 
-    #query: '(dec>-57) & ( (glat>2.5) | (glat<-2.5) | (pindex<2)) '
+    decorator_path: https://glast-ground.slac.stanford.edu/Decorator/exp/Fermi/Decorate/groups/catalog/pointlike/skymodels/{}/plots/pulsars/index.html?skipDecoration#5
+    
     """
     
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.setup_skymodel()
+        
+        plt.rc('font', size=16)
+
 
     def setup_skymodel(self,     
         slac_path= '/nfs/farm/g/glast/g/catalog/pointlike/skymodels/',
-        local_path= '/tmp/skymodels/'):
+        local_path= '/tmp/skymodels/',
+        ):
 
         if not self.version or self.version.split('.')[-1]=='Report':
             self.skymodel = 'uw1208-v3'
         else: self.skymodel = self.version
         mkey = self.skymodel[:4]
         
-        year = dict(uw12='P8_12years', uw89='P305_8years', uw90='P8-10years' )[mkey]
+        self.year = dict(uw12='P8_12years', uw89='P305_8years', uw90='P8-10years' )[mkey]
 
-        self.slac_path = os.path.join(slac_path, year,self.skymodel)
+        self.slac_path = os.path.join(slac_path, self.year,self.skymodel)
         self.local_path = os.path.join(local_path, self.skymodel)
 
-    def load_file(self, reload=False):
-        """Set up files
+    def check_slac_files(self):
+        with ftp.SLAC(self.slac_path, self.local_path) as slac:
 
-        #### Files copied from SLAC to {tmp};
+            print(f'loading/checking folders to copy from SLAC:  ', end='')
+            for folder in ['pulsars']:
+                print(f', {folder} ')
+                if not os.path.isdir(os.path.join(self.local_path, folder)):
+                    slac.get(f'plots/{folder}/*')
+            slac.get('plots/pulsars/candidates/*')
+            # slac.get('config.yaml'); print(', config.yaml', end='')
+            # slac.get('../config.yaml')
+            # lp = self.local_path
+            # shutil.move(os.path.join(lp, '../config.yaml'), 
+            #         os.path.join(lp, 'super_config.yaml') )
+            # print(', ../config.yaml -> super_config.yaml')
+
+    def introduction(self, reload=False):
+        """Introdcution
+
+        This is a continuation of a pulsar candidate selection that was performed using
+        all of the information about the sky model {self.year}/{self.skymodel} at SLAC. 
+        See [this output]({decorator})
+        Here we copy relevant files
+        to this local machine for further analysis:
+
+        #### Files copied from SLAC:
       
         {tmpfiles}
 
         Loaded:
         * Fermi-LAT pulsars from file `{pfile}` with {npsr} pulsars, 
-        * candidates from file `{cfile}` with {ncand} entries.
+        * non-4FGL candidates from file `{cfile}` with {ncand} entries.
+        * 4FGL candidates from file `{ffile}` with {ncandf} entries.
         """
+        decorator = self.decorator_path.format(os.path.join(self.year, self.skymodel))
         tmp = self.local_path
         pfile = 'pulsars.csv'
         cfile = 'plots/pulsars/pulsar_candidates.csv'
+        ffile = 'plots/pulsars/pulsar_candidates_in_4fgl.csv'
         with ftp.SLAC(self.slac_path, tmp) as slac:
             slac.get(pfile)
             slac.get(cfile)
-        tmpfiles = self.shell(f'ls -l {tmp}')
+            slac.get(ffile)
+            
+        tmpfiles = self.shell(f'ls -l {tmp}/plots/pulsars', summary='Files in the folder plots/pulsars' )
 
         self.dfp = pd.read_csv(tmp+'/'+pfile, index_col=0)
         self.dfc = pd.read_csv(tmp+'/'+cfile, index_col=0)
+        self.dff = pd.read_csv(tmp+'/'+ffile, index_col=0)
         npsr = len(self.dfp)
         ncand = len(self.dfc)
+        ncandf = len(self.dff)
         self.publishme()
     
     def get_candidates(self):
         """Examine Pulsar Candidates
 
 
-        ### The following is from the initial selection run
+        ### The following is from the initial selection run at SLAC
         
         Make a list of sources with the selections
 
@@ -84,77 +120,171 @@ class Pulsars(DocPublisher):
         * pivot energy < 3 GeV
         * R95 < 15 arcmin
         {selection_hists}
+
+        #### A second set of sources that **were** in 4FGL.
+        Other cuts are the same
+
+        {selection_4fgl}
         """
         selection_hists = self.image(f'{self.local_path}/plots/pulsars/new_candidates_{self.skymodel}.jpg',
-            width=600, caption='Selection histograms')
+            width=400, caption='Selection histograms, non-4FGL')
+
+        selection_4fgl = self.image(f'{self.local_path}/plots/pulsars/candidates_in_4fgl_{self.skymodel}.jpg',
+            width=400, caption='Selection histograms, 4FGL')
         #-------
         self.publishme()
 
     def further_cuts(self):
-        """Further cuts
+        """Further cuts 
 
-        Now require that when the source was detected, the pulsar-like spectral shape had the best fit (the 4th character in the name is "N").
+        Now we require that sources were first detected in the 10- or 12-year 4FGL update and the pulsar-like spectral shape had the best fit.
+        This corresponds to the 4th character in the name is being "N".
 
         These sources were fit to an exponential cutoff power-law spectral shape, for which the 
-        spectral index parameter is the slope at low energies. Make the relative hard 
-        with a further cut of 1.5.
+        spectral index parameter is the slope at low energies. We require that they be relatively hard, with the index less than 1.5. 
 
-        (The index for the log parabola fits is the slope at the pivot energy) 
-        
-        {fig}
+        Also require $|b|>2.5$, avoiding the confused galactic ridge, and biasing in favor of MSPs.
+   
+        The remaining log-parabola sources surely include pulsar candidates. The "photon index" parameter for them is the slope of the log flux vs. log energy at
+        the pivot energy, typically above 2. To compare with the exponential cutoff fits, this has been extrapolated to 100 MeV in the last plot.  But for now, there 
+        seem to be plenty of candidates with the pulsar-like spectral fits.
+
+        Below are the plots for the two categories, showing the effects of the sequential selection cuts.
         """
+        self.publishme()
 
-        dfx =self.dfc
-        ts = dfx.ts.astype(float).clip(0,1000)
+    def selection_hists(self, 
+            dfx, 
+            caption='',
+            tsclip=250,
+            ):
+        ts = dfx.ts.astype(float).clip(0,tsclip)
         singlat = np.sin(np.radians(dfx.glat.astype(float)))
         curvature= dfx.curvature.astype(float).clip(0,1)
         r95_arcmin = dfx.r95.astype(float)*60
         pivot = dfx.pivot_energy.astype(float)
-        #eflux =dfx.eflux.astype(float)
-        ncut = np.array([n[3]=='N' for n in dfx.index], dtype=bool)
-        index_cut = dfx.pindex<1.5
-        cuts = [ ncut, ncut& index_cut ]
-        cut_labels=['pulsar fit', 'index<1.5']
-        self.keep = ncut & index_cut
 
-        plt.rc('font', size=16)
+        ncut = np.array([n[3]=='N' for n in dfx.index], dtype=bool)
+        # photon index from fit - extrapolate to 100 MeV if log-parabola fit
+        pindex = dfx.pindex.astype(float)
+        adjust = pindex + curvature * np.log(100/pivot)
+        pindex[~ncut] = adjust[~ncut]
+        
+        # the cuts to apply
+        index_cut = pindex<1.5
+        bcut = np.abs(singlat)>np.sin(np.radians(2.5))
+        cuts = [ ncut, ncut& index_cut, ncut & index_cut & bcut ]
+        cut_labels=['pulsar fit', 'index<1.5', '|b|>2.5']
+        dfx.loc[:, 'keep'] = ncut & index_cut & bcut
 
         fig, axx = plt.subplots(2,3, figsize=(12,10))
         ax1,ax2,ax3,ax4,ax5,ax6 = axx.flatten()
-        hkw = dict(histtype='step', lw=2, log=True)    
+        
+
         def doit(ax, x, bins, xlabel, xlog=False):
+            hkw = dict(histtype='step', lw=2, log=False)  
             ax.hist(x, bins, label='', **hkw)  
             for i,cut in enumerate(cuts):
+                if i == len(cuts)-1:
+                    hkw.update(histtype='stepfilled', color='lightgray', ec='black')
                 ax.hist(x[cut], bins, label=cut_labels[i], **hkw)
             ax.set(xlabel=xlabel, xscale='log' if xlog else 'linear')
-            ax.set(ylim=(0.9,None));
-            ax.legend()
+            #ax.set(ylim=(0.9,None));
+            ax.legend(prop=dict(size=10))
+      
 
         doit(ax1, curvature, np.linspace(0,1,21), 'curvature')
         doit(ax2, pivot, np.logspace(np.log10(200),np.log10(2e4),21), 'pivot energy', xlog=True)
         doit(ax3, r95_arcmin, np.linspace(0,25,26),'R95 (arcmin)')
-        doit(ax4, ts, np.logspace(1,2.4,25), 'TS', xlog=True)
+        doit(ax4, ts, np.logspace(1,np.log10(tsclip),25), 'TS', xlog=True)
         doit(ax5, singlat, np.linspace(-1,1,21), 'sin(b)')
-        doit(ax6, dfx.pindex, np.linspace(1,3,21), 'photon index')
-        fig.caption='Same plots as selection, but with new cut on source detection type'
+        doit(ax6, pindex, np.linspace(1,3,21), 'low-energy index')
+        if not caption:
+            fig.caption='Same plots as the SLAC selection, but with new cuts on source detection properties.'\
+                        ' The last plot is the low-energy photon index, see text.'
         fig.width = 600
-        
+        fig.set_facecolor('white')
+        return fig
+
+    def non_fgl_cuts(self):
+        """Non-4FGL sources
+
+        {fig}
+        """
+        fig = self.selection_hists(self.dfc)
+       
         #------
+        self.publishme()
+    
+    def in_fgl_cuts(self):
+        """In 4FGL sources
+
+
+        {fig}
+        """
+        fig = self.selection_hists(self.dff)
+
+        #------------
         self.publishme()
 
     def sed_table(self):
-        """Table of SEDs
+        """Tables of SEDs
         
+        For each data set, here are links to csv files containing essential information, and tables of SED images.
+        """
+        self.publishme()
+
+    def non_4fgl_seds(self):
+        """Selected non-4FGL seds
+
+        A table of the {N} non-4FGL pulsar candidates, sorted with decending TS:
+
+        <a href="pulsar_candidates.csv">Candidate csv table</a>
+        (Note that Chrome has a bug: It may change the extension to "xls".)
+        
+        {df}
+        
+
+        And simple SED's, all with same scale 100 MeV-30 GeV and 0.6 - 40 $\mathrm{{ eV (s\ cm^2 )^{-1} }}$. 
         {images}
         """
-
-
-        names = sorted(self.dfc[self.keep].index)   
+        df = self.dfc.query('keep==True').copy()
+        df.loc[:,'name'] = df.index
+        df = df['name ra dec ts glat r95'.split()]
+        df.sort_values(by='ts', ascending=False)
+        df.to_csv(os.path.join(self.doc_folders[0], 'pulsar_candidates.csv') )
+        N = len(df)
         images = ImageTable(self,
             os.path.join(self.local_path, 'plots/pulsars/candidates'),
-            names, )
+            df)
         #------
         self.publishme()
+    
+    def in_4fgl_seds(self):
+        """Selected 4FGL seds
+
+        A table of the {N} 4FGL pulsar candidates sorted with decending TS:
+
+        <a href="pulsar_candidates_4fgl.csv">Candidate csv table</a>
+        (Note that Chrome has a bug: It may change the extension to "xls".)
+        
+        {df}        
+
+        And simple SED's, all with same scales, 100 MeV-30 GeV and 0.6 - 40 $\mathrm{{ eV (s\ cm^2 )^{-1} }}$. 
+        {images}
+        """
+        df = self.dff.query('keep==True').copy()
+        df.loc[:,'name'] = df.index
+        df = df['name ra dec ts glat r95 sname'.split()]
+        df.sort_values(by='ts', ascending=False)
+        df.to_csv(os.path.join(self.doc_folders[0], 'pulsar_candidates_4fgl.csv') )
+        N = len(df)
+        images = ImageTable(self,
+            os.path.join(self.local_path, 'plots/pulsars/candidates'),
+            df)
+        #------
+        self.publishme()
+
 
 
 class ImageTable(object):
@@ -165,28 +295,31 @@ class ImageTable(object):
     def __init__(self,
                     doc: 'the document class', 
                     source_path:'where to find the original images',
-                    names:'list of source names',
+                    df:'data frame', #names:'list of source names',
                     image_file_path='images',
                 ):
 
         # copy each image from the source path to both local and document
-        for name in names:
+        for name in df.index:
             fn = name+'.jpg'
             a = os.path.join(source_path, fn)
             for folder in doc.doc_folders:
                 b = os.path.join(folder, image_file_path, fn)
                 shutil.copy(a, b)
-        self.images = [image_file_path+f'/{name}.jpg' for name in names]
-        
+        self.images = [image_file_path+f'/{name}.jpg' for name in df.index]
+        self.ts = df.ts
+                
         print(f'Will display {len(self.images)} images') 
 
     def _repr_html_(self):
+        # this allows display in a cell 
 
-        def image_rep(image):
+        def image_rep(image, ts):
             _, fname = os.path.split(image)
             name, _ = os.path.splitext(fname)
             style='width: 120px; margin: 0px; float: left; border: 1px solid black;'
-            return f'<img src="{image}" styple="{style}" width={self.width} alt="file {image}" title={name} />'
+            return f'<a href="{image}"><img src="{image}" styple="{style}"'\
+                   f' width={self.width} alt="file {image}" title="{name}, {ts:.0f}"/></a>'
 
         imgs = self.images
         rows = len(imgs)//self.row_size
@@ -196,7 +329,7 @@ class ImageTable(object):
         for row in range(rows):
             ret += '\n  <tr>'
             for i in range(self.row_size):
-                ret +=  f'\n    <td class="td"> {image_rep(imgs[j])}</td>'
+                ret +=  f'\n    <td class="td"> {image_rep(imgs[j], self.ts[j] )}</td>'
                 j +=1
             ret += '\n   </tr>'
         ret += '\n</table>'

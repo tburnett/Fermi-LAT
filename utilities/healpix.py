@@ -56,13 +56,17 @@ class HPcube(HPmap):
     """Implement a spcetral cube with logarithmic interpolation
     """
 
-    def __init__(self, spectral_cube:'2-d array', 
+    def __init__(self, spectral_cube:'2-d array, or list of 1-d arrays', 
                     energies:'corresponding energies',
                     cblabel='', 
                     energy:'default value'=1000,
                     unit:'units'='',
                     sigma:'somothing parameter (deg)'=0, 
                      ):
+        sc = spectral_cube
+        if type(sc)==list:
+            assert len(sc)==len(energies), 'Input was a list of wrong length'
+            spectral_cube = np.vstack(sc)
         sh = spectral_cube.shape
         assert len(sh)==2, 'Expect 2-d array'
         # transpose if needed               
@@ -366,7 +370,7 @@ def ait_plot(mappable,
     # code inspired by https://stackoverflow.com/questions/46063033/matplotlib-extent-with-mollweide-projection
 
     # make a mesh grid
-    nx, ny = 360//pixelsize, 180//pixelsize
+    nx, ny = int(360/pixelsize), int(180/pixelsize)
     lon = np.linspace(-180, 180, nx)
     lat = np.linspace(-90., 90, ny)
     Lon,Lat = np.meshgrid(lon,lat)
