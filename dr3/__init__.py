@@ -1,3 +1,0 @@
-
-docspath = '../../docs'
-
