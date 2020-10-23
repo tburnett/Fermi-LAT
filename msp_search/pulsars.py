@@ -18,7 +18,7 @@ class MSPcandidates(DocPublisher):
  
     author: Toby Burnett
     
-    sections: introduction get_candidates 
+    sections: introduction examine_candidates 
                 further_cuts [ non_fgl_cuts in_fgl_cuts ]
                 sed_table [non_4fgl_seds in_4fgl_seds ]
 
@@ -66,7 +66,7 @@ class MSPcandidates(DocPublisher):
             # print(', ../config.yaml -> super_config.yaml')
 
     def introduction(self, reload=False):
-        """Introdcution
+        """Introduction
 
         This is a continuation of a pulsar candidate selection that was performed using
         all of the information about the sky model {self.year}/{self.skymodel} at SLAC. 
@@ -103,7 +103,7 @@ class MSPcandidates(DocPublisher):
         ncandf = len(self.dff)
         self.publishme()
     
-    def get_candidates(self):
+    def examine_candidates(self):
         """Examine Pulsar Candidates
 
 
@@ -112,16 +112,16 @@ class MSPcandidates(DocPublisher):
         Make a list of sources with the selections
 
         * not associated
-        * not in 4FGL or withinn 0.5 deg of one
+        * not in 4FGL-DR2 or withinn 0.5 deg of one
         * nearest 4FGL source is extended or has TS<1000
          
-        The plots are for sources from this list, showing the effects of subsequent cuts:
+        The plots, copied from the SLAC analysis, define the sources in thses lists, showing the effects of subsequent cuts:
         * 0.15 < curvature < 0.75
         * pivot energy < 3 GeV
         * R95 < 15 arcmin
         {selection_hists}
 
-        #### A second set of sources that **were** in 4FGL.
+        #### The set of sources that **were** in 4FGL.
         Other cuts are the same
 
         {selection_4fgl}
@@ -137,13 +137,14 @@ class MSPcandidates(DocPublisher):
     def further_cuts(self):
         """Further cuts 
 
-        Now we require that sources were first detected in the 10- or 12-year 4FGL update and the pulsar-like spectral shape had the best fit.
-        This corresponds to the 4th character in the name is being "N".
+        Now we require that sources were first detected in the 10- or 12-year 4FGL updates and that the pulsar-like spectral shape had the best fit.
+        This corresponds to the 4th character in the name is being "N". (The first three characters help identify the model in which they were detected.)
 
         These sources were fit to an exponential cutoff power-law spectral shape, for which the 
         spectral index parameter is the slope at low energies. We require that they be relatively hard, with the index less than 1.5. 
 
-        Also require $|b|>2.5$, avoiding the confused galactic ridge, and biasing in favor of MSPs.
+        FInally we require $|b|>2.5$, avoiding the confused galactic ridge, and biasing in favor of MSPs. (A further selection on declination would be necessary
+        for a specific radio telescope.)
    
         The remaining log-parabola sources surely include pulsar candidates. The "photon index" parameter for them is the slope of the log flux vs. log energy at
         the pivot energy, typically above 2. To compare with the exponential cutoff fits, this has been extrapolated to 100 MeV in the last plot.  But for now, there 
@@ -198,7 +199,7 @@ class MSPcandidates(DocPublisher):
         doit(ax3, r95_arcmin, np.linspace(0,25,26),'R95 (arcmin)')
         doit(ax4, ts, np.logspace(1,np.log10(tsclip),25), 'TS', xlog=True)
         doit(ax5, singlat, np.linspace(-1,1,21), 'sin(b)')
-        doit(ax6, pindex, np.linspace(1,3,21), 'low-energy index')
+        doit(ax6, pindex.clip(0.,3), np.linspace(0,3,31), 'low-energy index')
         if not caption:
             fig.caption='Same plots as the SLAC selection, but with new cuts on source detection properties.'\
                         ' The last plot is the low-energy photon index, see text.'
@@ -217,8 +218,7 @@ class MSPcandidates(DocPublisher):
         self.publishme()
     
     def in_fgl_cuts(self):
-        """In 4FGL sources
-
+        """4FGL sources
 
         {fig}
         """

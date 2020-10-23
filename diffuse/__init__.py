@@ -1,1 +1,1 @@
-docspath = '../../docs'
+docspath = '../../docs/diffuse'

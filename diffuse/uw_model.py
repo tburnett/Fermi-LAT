@@ -27,6 +27,7 @@ class CheckRatio(DocPublisher):
 
     slac_path:  '/afs/slac/g/glast/groups/catalog/pointlike/fermi/skymodels/P305_8years'
     slac_fermi_path: '/afs/slac/g/glast/groups/catalog/pointlike/fermi'
+    slac_diffuse_path: /nfs/farm/g/glast/g/diffuse/P8diffuse/results/diffuse_models
     local_fermi_path: '/home/burnett/fermi'
     local_path: '/tmp/uw_diffuse/roi_info'
 
@@ -274,8 +275,10 @@ class UWdiffuseModel(DocPublisher):
 
     sections:   introduction galactic [flux_factor_cube dm7_comparison apply_factors ] isotropic summary
 
-    fermi_path: '/home/burnett/fermi'
-    nopatch_diffuse_file: 'diffuse/test_model_InnerGalaxyYB01_test512_interp_nopatch.fits'
+    local_fermi_path: '/home/burnett/fermi'
+    nopatch_diffuse_file: 'test_model_InnerGalaxyYB01_test512_interp_nopatch.fits'
+    nopatch_noCO9:        'test_model_InnerGalaxyYB01_test512_interp_noCO9_lg_nopatch.fits'
+
     factor_file: 'bubbles/bubble_cube_v4.fits'
     test_model_name: 'YB01_nopatch'
     diffuse_model_name: 'gll_iem_v07'
@@ -283,6 +286,7 @@ class UWdiffuseModel(DocPublisher):
     iso_path:  '/home/burnett/fermi/diffuse/isotropic_uw/'
     outfiles: ['gll_iem_uw_*.fits',  'gll_iso_uw_*.txt' ]
     slac_uw_path: '/nfs/farm/g/glast/g/catalog/pointlike/fermi/diffuse/uw'
+    slac_diffuse_path: /nfs/farm/g/glast/g/diffuse/P8diffuse/results/diffuse_models
     local_uw_path: '/home/burnett/fermi/diffuse/uw'
     copy_to_slac: True
 
@@ -293,7 +297,7 @@ class UWdiffuseModel(DocPublisher):
         self.version = getattr(self,'version', 'x')
         assert self.version=='v4', 'only developing version v4'
         self.outfiles = list(map(lambda f:f.replace('*', self.version), self.outfiles))
-        self.dmx = dm= HPcube.from_FITS(os.path.join(self.fermi_path, self.nopatch_diffuse_file))
+        self.dmx = dm= HPcube.from_FITS(os.path.join(self.local_fermi_path,'diffuse', self.nopatch_diffuse_file))
 
     def introduction(self):
         """Introduction
@@ -323,6 +327,14 @@ class UWdiffuseModel(DocPublisher):
         defined by the file `{self.nopatch_diffuse_file}`.
 
         {fig1}
+        
+        Note that the gardian models can be found at `{self.slac_diffuse_path}`.  Of note:
+
+         * `test_model_CAR_InnerGalaxyYB01_interp_noCO9_lg_1441.fits.gz`: corresponds to the release `gll_iem_v07_hpx.fits`
+         * `test_model_InnerGalaxyYB01_test512_interp_noCO9_lg_nopatch.fits`: the release without the patch
+         * `test_model_InnerGalaxyYB01_test512_interp_nopatch.fits`: the unpatched version used here
+
+        Thus my model differs from the released by having "C09".
 
         """    
         energies = np.logspace(2, 5, 4)
@@ -386,19 +398,24 @@ class UWdiffuseModel(DocPublisher):
 
         Note that at high energies the patch dominates the flux. So, which is a better representation of the data?
         """
-        self.dm7 = dm= HPcube.from_FITS(os.path.join(self.fermi_path, self.diffuse_v07))
+        self.dm7 = dm= HPcube.from_FITS(os.path.join(self.local_fermi_path, self.diffuse_v07))
         cube7 = self.dm7.spectral_cube
-        cubex = self.dmx.spectral_cube
-        r = cube7/cubex
+
+        # use the CO9 nopatch version here
+        dm_np = HPcube.from_FITS(os.path.join(self.local_fermi_path,'diffuse', self.nopatch_noCO9))
+        cube_np = dm_np.spectral_cube
+        r = cube7/cube_np
         z = r<1.1
         r[z]=np.nan
         ratio_cube = HPcube(r, self.dm7.energies)
-        fig1 = healpix.ait_multiplot(ratio_cube, [1e3, 1e6], labels=['1 GeV', '1 TeV'], fignum=1, vmin=1, vmax=None)
+        fig1 = healpix.ait_multiplot(ratio_cube, [1e3, 1e6], labels=['1 GeV', '1 TeV'], fignum=1, vmin=1, vmax=None, sizex=20)
         fig1.caption=f'Ratio of the diffuse model DM7 to the test model {self.test_model_name},'\
             ' at 1 GeV and 1 Tev, showing portions above 1.1'
+        fig1.width=800
         
-        fig2 = ait_multiplot(self.pf, energies=(1e3, 1e6), labels = ['1 GeV', '1 TeV'], fignum=2, vmin=1, vmax=None)
+        fig2 = ait_multiplot(self.pf, energies=(1e3, 1e6), labels = ['1 GeV', '1 TeV'], fignum=2, vmin=1, vmax=None, sizex=20)
         fig2.caption=f'Evaluation of the UW "factor cube" at 1 GeV and 1 TeV'
+        fig2.width=800
 
         #---------------
         self.publishme()
@@ -419,15 +436,15 @@ class UWdiffuseModel(DocPublisher):
 
         ### Version v4:
 
-        It has been pointed out, first by Jean Ballet, and subsequently emphasized by Gulli Johannesson, that the moultipicatve procedure
+        It has been pointed out, first by Jean Ballet, and subsequently emphasized by Gulli Johannesson, that the multipicatve procedure
         has an inadvertant effect of changing features with small angular scales, e.g., gas maps. The following procedure eliminates this:
 
         Let $F$ represent the patch-less flux cube, and $B$ the factor cube derived from the ROI correction factors.
         Previously I multiplied the two cubes which was sufficient for catalog work. That is, I represented the
         adjusted flux cube with the product $F \times B$. To avoid adjusting small-angle features in the original model, like the gas maps, 
-        I instead perform $F + S(F\times (B-1))$, where $S$ is a smoothing function, here a 2-D Gaussian with sigma ${sigma}^\\circ$.  
+        I instead perform $F + S(F\times (B-1))$, where $S$ is a smoothing function, here a 2-D Gaussian with sigma ${sigma}^\circ$.  
 
-        Here is the patch equivalent, the smoothed product of $F$ with $B-1$. Note since $B$ is not always >1, there are 
+        Here is the patch equivalent, the smoothed product of $F$ and $B-1$. Note since $B$ is not always >1, there are 
         negative values, shown as black.
 
         {patch_fig}

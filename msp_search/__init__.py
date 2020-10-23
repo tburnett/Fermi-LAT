@@ -1,3 +1,3 @@
 
-docspath = '../../docs'
+docspath = '../../docs/pulsars'
 
