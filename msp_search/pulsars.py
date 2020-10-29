@@ -6,7 +6,7 @@ import shutil
 import numpy as np
 import pandas as pd 
 import matplotlib.pyplot as plt 
-from utilities import ftp
+from utilities import ftp, LogParabola
 
 from jupydoc import DocPublisher
 
@@ -19,20 +19,18 @@ class MSPcandidates(DocPublisher):
     author: Toby Burnett
     
     sections: introduction examine_candidates 
-                further_cuts [ non_fgl_cuts in_fgl_cuts ]
-                sed_table [non_4fgl_seds in_4fgl_seds ]
+                further_cuts [ non_fgl_cuts fgl_cuts fgl_cuts2]
+                sed_table [non_4fgl_seds fgl_seds fgl_seds2 ]
 
     decorator_path: https://glast-ground.slac.stanford.edu/Decorator/exp/Fermi/Decorate/groups/catalog/pointlike/skymodels/{}/plots/pulsars/index.html?skipDecoration#5
     
-    """
-    
+    """    
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.setup_skymodel()
         
         plt.rc('font', size=16)
-
 
     def setup_skymodel(self,     
         slac_path= '/nfs/farm/g/glast/g/catalog/pointlike/skymodels/',
@@ -49,15 +47,16 @@ class MSPcandidates(DocPublisher):
         self.slac_path = os.path.join(slac_path, self.year,self.skymodel)
         self.local_path = os.path.join(local_path, self.skymodel)
 
-    def check_slac_files(self):
+    def check_slac_files(self, folders=['pulsars'],reload=False, quiet=False):
         with ftp.SLAC(self.slac_path, self.local_path) as slac:
 
             print(f'loading/checking folders to copy from SLAC:  ', end='')
-            for folder in ['pulsars']:
+            for folder in folders:
                 print(f', {folder} ')
                 if not os.path.isdir(os.path.join(self.local_path, folder)):
-                    slac.get(f'plots/{folder}/*')
-            slac.get('plots/pulsars/candidates/*')
+                    slac.get(f'plots/{folder}/*', reload=reload, quiet=quiet)
+            #slac.get('plots/pulsars/candidates/*')
+            #slac.get('plots/pulsars/pulsar_candidates_in_4fgl.csv', reload=True, quiet=False)
             # slac.get('config.yaml'); print(', config.yaml', end='')
             # slac.get('../config.yaml')
             # lp = self.local_path
@@ -217,7 +216,7 @@ class MSPcandidates(DocPublisher):
         #------
         self.publishme()
     
-    def in_fgl_cuts(self):
+    def fgl_cuts(self):
         """4FGL sources
 
         {fig}
@@ -225,6 +224,88 @@ class MSPcandidates(DocPublisher):
         fig = self.selection_hists(self.dff)
 
         #------------
+        self.publishme()
+
+    def fgl_cuts2(self):
+        """4FGL sources, part 2
+
+        Here we examine 4FGL-DR2 candidate sources that did not originate from seeds detected as likely pulsars.
+        
+        For these, we have the log parabola parameters, this section is devoted to understanding how to 
+        interpret them to select the most likely pulsars
+        An example is {example}, or {sname}, an obvious-looking example for which pulsations have
+        been looked for, but not found.
+        {fig1}
+
+        Here are the distributions of the spectral parameters, with the pivot flux, and the spectral index evaluated at 100 MeV.
+
+
+        {fig2}
+
+
+        """
+        # select sources with "N" not 4th caracter of name
+        k = self.dff.apply(lambda x: x.name[3]!='N', axis=1).array
+        dff = self.dff[k].copy()
+        print(f'Selected {sum(k)} SLAC sources not tagged as pulsar-like')
+
+        # extract the parameters from the DataFrame--have to evaluate the string "pars" first
+        dff.loc[:,'p'] = dff.pars.apply(lambda x: eval(x.replace(' ',',')))
+        dff.loc[:, 'logpar' ] = dff.p.apply(lambda p: LogParabola(p)) 
+        dff.loc[:, 'f100'] = dff.logpar.apply(lambda f: f(100))
+        dff.loc[:, 'a100'] = dff.logpar.apply(lambda f: f.alpha(100))
+        pivot = dff.p.apply(lambda p:p[3])
+        dff.loc[:, 'peak'] = dff.logpar.apply(lambda f: f.peak)
+        dff.loc[:,'flux'] = dff.apply(lambda row: row.logpar(row.peak), axis=1)
+        dff.loc[:,'a20k'] = dff.logpar.apply(lambda f: f.alpha(2e4) )
+
+        cut =   (dff.f100>0.01)  &  \
+                (dff.a100<1.5) & \
+                (np.abs(dff.glat)>2.5) & \
+                (dff.a20k>3)
+
+        print(f'Cut selects {sum(cut)}')
+        self.dffk = dff[cut]  
+
+        ### the example source
+        example = 'P88Y2837'
+
+        f, sname, ts = dff.loc[example, ['logpar', 'sname', 'ts']]
+        fig1 = f.sed(sname)
+        fig1.caption=f'SED for source {example}, or {sname}. It has TS = {ts:.0f}'
+
+        fig2,  axx = plt.subplots(2,3, figsize=( 15,10), num=2)
+        fig2.width = 600
+        fig2.caption = r'Spectral parameters and $\sin(b)$, showing effect of selection cut.'
+        ax1, ax2, ax3, ax4, ax5, ax6 = axx.flatten()
+
+        hkw= dict(histtype='step', lw=2)
+        hkw2 = {**hkw, **dict(histtype='stepfilled',color='lightgray', ec='black')}
+
+        def dohist(ax, x, bins, xlabel='', xscale='linear'):
+            ax.hist(x, bins, **hkw)
+            ax.hist(x[cut], bins,  **hkw2)
+            ax.set(xscale=xscale, xlabel=xlabel, ) 
+            ax.grid(alpha=0.5) 
+
+        dohist(ax1, dff.flux, np.logspace(-1.5,1.5,31), xscale='log', xlabel='Flux @ peak')
+        dohist(ax2, dff.a100.clip(0,3), np.linspace(0,3,31), xlabel='Index @100 MeV')
+       
+        ax3.plot(dff.flux.clip(1e-2,1e2), dff.a100.clip(0,3), '.')
+        ax3.set(xscale='log', ylim=(0,3.05), xlabel='Flux @ peak', ylabel='100 MeV index')
+        a,b = dff.loc[example, 'flux a100'.split()]
+        ax3.plot(a,b, 'or', label=f'{example}')
+        ax3.legend()
+        ax3.grid(alpha=0.5) 
+       
+        curvature = dff.p.apply(lambda p: p[2])
+        dohist(ax4, curvature.clip(0,2), np.linspace(0,1, 26), xlabel='curvature')
+
+        dohist (ax5, dff.peak, np.logspace(2,4,21), xscale='log', xlabel='peak energy')
+        
+        singlat = np.sin(np.radians(dff.glat))
+        dohist(ax6, singlat, np.linspace(-1,1,41), xlabel=r'$\sin(b)$')
+        #--------------
         self.publishme()
 
     def sed_table(self):
@@ -260,7 +341,7 @@ class MSPcandidates(DocPublisher):
         #------
         self.publishme()
     
-    def in_4fgl_seds(self):
+    def fgl_seds(self):
         """Selected 4FGL seds
 
         A table of the {N} 4FGL pulsar candidates sorted with decending TS:
@@ -283,6 +364,20 @@ class MSPcandidates(DocPublisher):
             os.path.join(self.local_path, 'plots/pulsars/candidates'),
             df)
         #------
+        self.publishme()
+
+    def fgl_seds2(self):
+        """4FGL seds, part 2
+
+        These were selected above.
+
+        Showing {n} out of {nt} sorted by TS, 
+
+        {images}
+        """
+        n = 100; nt=len(self.dffk)
+        images = ImageTable(self, os.path.join(self.local_path, 'plots/pulsars/candidates'), self.dffk[:n]) 
+
         self.publishme()
 
 
@@ -322,7 +417,8 @@ class ImageTable(object):
                    f' width={self.width} alt="file {image}" title="{name}, {ts:.0f}"/></a>'
 
         imgs = self.images
-        rows = len(imgs)//self.row_size
+        rs = self.row_size
+        rows = (len(imgs)+rs-1)//rs
 
         ret = '\n<table>'
         j=0
@@ -331,6 +427,7 @@ class ImageTable(object):
             for i in range(self.row_size):
                 ret +=  f'\n    <td class="td"> {image_rep(imgs[j], self.ts[j] )}</td>'
                 j +=1
+                if j==len(imgs): break 
             ret += '\n   </tr>'
         ret += '\n</table>'
         
