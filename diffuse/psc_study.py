@@ -13,37 +13,44 @@ __docs__= ['PSCstudy']
 
 class PSCstudy(DocPublisher):
     """
-    title: Study the 4FGL-DR2 diffuse parameters
+    title: Study the Catalog diffuse parameters
 
     author: Toby Burnett
     
-    sections: introduction galactic_maps plots
+    sections: introduction plots
 
     diffuse_files: 
-        - 'gll_iem_v07_hpx.fits'
+        - 'gll_iem_v07x_hpx.fits'
         - 'isotropic_8years_P305_SOURCE_FRONT.txt'
     
-    psc_pattern: /home/burnett/fermi/diffuse/gll_psc*.fit
+    psc_pattern: '$FERMI/catalog/gll_pscP305*.fit'
     
-    uw_diffuse: /home/burnett/fermi/diffuse/uw/gll_iem_uw_v3.fits
+    psc_files:
+        3FGL: gll_psc_v16.fit
+        4FGL: gll_pscP305uw8606_v6.fit
+        4FGL-DR2: gll_pscP305uw9011_v12r2_assoc_v8r4p1_classes.fits
+        4FGL-DR2-UW: gll_pscP305uw9011_v16.fit
+
+    uw_diffuse: $FERMI/diffuse/uw/gll_iem_uw_v3.fits
 
     """
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        if self.version:
+            print(f'Processing with version {self.version}')
+            self.psc_file = os.path.expandvars(os.path.join('$FERMI/catalog', self.psc_files[self.version]))
+            print(self.psc_file)
+            self.doc_info['title'] += f'\nVersion {self.version}'
+            self.df = self.roi_dataframe(self.psc_file)
+        else:
+            raise Exception(f'No version specified: must be one of {self.psc_files.keys()}')
 
-        self.df = self.roi_dataframe()
-        self.gflux = healpix.HPcube.from_FITS(f'/home/burnett/fermi/diffuse/{self.diffuse_files[0]}')
-
-    def roi_dataframe(self):
+    def roi_dataframe(self, f):
         from astropy.io import fits
         from astropy.table import Table
-            
-        ff = sorted(glob.glob(self.psc_pattern))
-        assert len(ff)>0, 'No files found with "{}"'.format(self.psc_pattern)
-        self.psc_file = f = ff[-1]
 
-        print( 'opening file "{}"'.format(f))
+        print( 'opening file psc "{}"'.format(f))
         df=Table.read(f, hdu='ROIS').to_pandas()
         df['singlat'] = np.sin(np.radians(df.GLAT))
 
@@ -51,7 +58,8 @@ class PSCstudy(DocPublisher):
         glon[glon>180] -=360
         df['glat']=df.GLAT
         df['glon']=glon
-        df['radius'] = df.CoreRadius
+        # df['radius'] = df.CoreRadius
+        df['radius'] = 0
         df['gal_norm']=df.PARNAM1
         df['gal_index']=df.PARNAM2
         df['iso_norm']=df.PARNAM3
@@ -91,7 +99,7 @@ class PSCstudy(DocPublisher):
         fig1.caption = f'Flux from {self.diffuse_files[0]} at 1 TeV.'
         
         fig2 = plt.figure(figsize=(12,6), num=2)
-        uwdiffuse = healpix.HPcube.from_FITS(self.uw_diffuse)
+        uwdiffuse = healpix.HPcube.from_FITS(os.path.expandvars(self.uw_diffuse) )
         uwdiffuse.ait_plot(1e6, fig=fig2 ,label='')
         fig2.caption = f'Flux from UW diffuse model at 1 TeV.'
 
@@ -153,7 +161,7 @@ class PSCstudy(DocPublisher):
 
         def stripe(label='Polar', num=2, energy=1000):
             # to evaluate the galactic flux
-            gflux = healpix.HPcube.from_FITS(f'/home/burnett/fermi/diffuse/{self.diffuse_files[0]}')
+            gflux = healpix.HPcube.from_FITS( os.path.join(self.diffuse_path, self.diffuse_files[0]))
             
             if label == 'Polar':
                 cosb = np.cos( np.radians(df.glat) )
@@ -212,7 +220,8 @@ class PSCstudy(DocPublisher):
 
         fig1 = roi_map(num=1)
 
-        patch_image = self.image('/home/burnett/fermi/diffuse/XC04-patch.png', 
+        patch_image = self.image(
+            os.path.join(self.diffuse_path,'XC04-patch.png'), 
             caption='Diffuse model id "XC04" patch component: counts for the 228 MeV band used to generate the model.', 
             width=600)
         
