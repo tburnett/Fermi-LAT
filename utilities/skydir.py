@@ -6,7 +6,8 @@ import healpy
 
 
 class SkyDir(object):
-    """Wrap a SkyCoord object, provide convenience interface to
+    """ Provide convenient interface to astropy's SkyCoord
+    But added HEALPix capability
     """
     nside = None
     nest = False
@@ -51,6 +52,12 @@ class SkyDir(object):
         assert nside, 'Expect nside to be specified, a class variable'
         l,b = self.galactic
         return healpy.ang2pix(nside, l,b, nest=SkyDir.nest, lonlat=True)
+
+    def match(self, catalog:'another SkyDir with more than one position'
+            )->'idx, sepdeg':
+
+        idx, sep, dist = self.coord.match_to_catalog_sky(catalog.coord)
+        return idx, sep.deg
 
 def test():
     SkyDir.nside=64
