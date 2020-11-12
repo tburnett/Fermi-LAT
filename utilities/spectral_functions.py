@@ -45,3 +45,15 @@ class LogParabola(object):
         return fig
 
     
+class FluxTable(object):
+
+    def __init__(self, filename:'text file with columns energy, flux, flux_unc'):
+        
+        # Ignore flux_unc
+        # set up logarithmic iterpolation
+
+        tbl = np.loadtxt(filename, usecols={0,1}).T
+        self.log_tbl=np.log(tbl)
+
+    def __call__(self, energy:'energy in MeV')->'flux':
+        return np.exp(np.interp(np.log(energy), *self.log_tbl))
