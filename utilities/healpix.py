@@ -2,6 +2,7 @@ import os, sys
 import numpy as np
 import pandas as pd 
 import matplotlib.pyplot as plt 
+import matplotlib as mpl
 from matplotlib import colors
 from astropy.io import fits
 import healpy
@@ -43,7 +44,7 @@ class HPmap(object):
 
 
     def ait_plot(self,  **kwargs):
-        ait_plot(self, label=self.label, cblabel=self.cblabel, **kwargs)
+        return ait_plot(self, label=self.label, cblabel=self.cblabel, **kwargs)
 
     def __truediv__(self, other ):
         return self.map / other.map
@@ -351,7 +352,7 @@ def ait_plot(mappable,
         pars=[],
         label='',        
         title='',
-        fig=None, ax=None,
+        fig=None, ax=None, fignum=1,
         pixelsize:'pixel size in deg'=1, 
         projection='aitoff',
         cmap='jet', 
@@ -383,7 +384,7 @@ def ait_plot(mappable,
         fig = ax.figure
         assert ax.__class__.__name__=='AitoffAxesSubplot'
     else:
-        fig = plt.figure(figsize=(12,5)) if fig is None else fig
+        fig = plt.figure(figsize=(12,5), num=fignum) if fig is None else fig
         # this needs to be more flexible
         ax = fig.add_subplot(axes_pos, projection=projection, **axes_kw)
 
@@ -401,6 +402,8 @@ def ait_plot(mappable,
         ax.text( 0., 0.97, label, transform=ax.transAxes)
     if title:
         plt.suptitle(title, fontsize=12)
+
+    return fig
 
 
 def ait_multiplot(
@@ -429,7 +432,7 @@ def ait_multiplot(
  
     ny = (n+nx-1)//nx
     sizey = sizey or  (0.5 + 3.5*ny)  #[4.0, 7.5, 11, 14.5, 18][ny-1]
-    kw = dict(cmap=cmap, vmin=vmin, vmax=vmax, log=log, colorbar=colorbar,cb_kw=dict(shrink=cb_shrink))
+    kw = dict(cmap=cmap, vmin=vmin, vmax=vmax, log=log, colorbar=colorbar,cb_kw=dict(shrink=cb_shrink), **kwargs)
     
     fig, axx = plt.subplots(ny,nx, figsize=(sizex, sizey), num=fignum,
             gridspec_kw={'wspace':0.05, 'hspace':0.0,'left':0.2, 'top':0.9},
@@ -450,6 +453,19 @@ def ait_multiplot(
     fig.set_facecolor('white')
     return fig
         
+
+def ait_multiplot_bands(mappable, fignum=1, **kwargs):
+    """Special for the 8 UW energy bands
+    """
+    band_energies = np.logspace(2.125, 3.875, 8)
+    band_labels = list(map(lambda x: f'{x/1e3:.2f} GeV', band_energies))
+    fs =mpl.rcParams['font.size']
+    plt.rc('font', size=10)
+    ret= ait_multiplot( mappable,  band_energies,  labels=band_labels,
+            nx=4, cb_shrink=0.5, sizex=20,sizey=5.,  
+             **kwargs)
+    mpl.rcParams['font.size']= fs
+    return ret
 
 
 class Polyfit(object):
