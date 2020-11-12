@@ -18,6 +18,31 @@ __docs__ = ['UWdiffuseModel','CheckRatio', 'ResidualAnalysis']
 
 bubble_path = '/home/burnett/fermi/bubbles/'
 
+def load_slac_files(skymodel, 
+        reload=False, quiet=True,
+        slac_path = '/nfs/farm/g/glast/g/catalog/pointlike/skymodels/',
+        local_path= '/tmp/skymodels/',
+        ):
+    mkey = skymodel[:4]
+    year = dict(uw12='P8_12years', uw86='P305_8years', uw90='P8_10years' )[mkey]
+
+    slac_path = os.path.join(slac_path, year, skymodel)
+    local_path = os.path.join(local_path, skymodel)
+
+    with ftp.SLAC(slac_path, local_path) as slac:
+        folders = filter(lambda f:f.find('.')<0, slac.listdir('plots') )
+        print(f'loading/checking folders to copy from SLAC:  ', end='')
+        for folder in folders:
+            print(f', {folder} ', end='')
+            if not os.path.isdir(os.path.join(local_path, folder)):
+                slac.get(f'plots/{folder}/*', reload=reload, quiet=quiet)
+        slac.get('config.yaml'); print(', config.yaml', end='')
+        slac.get('../config.yaml')
+        lp = local_path
+        shutil.move(os.path.join(lp, '../config.yaml'), 
+                os.path.join(lp, 'super_config.yaml') )
+        print(', ../config.yaml -> super_config.yaml')
+    return local_path
 
 class CheckRatio(DocPublisher):
     """
@@ -547,81 +572,129 @@ class UWdiffuseModel(DocPublisher):
 
 class ResidualAnalysis(DocPublisher):
     """
-    title: Analyis of residuals and galactic diffuse norms
+    title: Analyis of {version} residuals and galactic diffuse norms
 
-    sections: get_file normalization_maps residual_maps
+    sections: introduction normalization_maps residual_maps
 
     slac_path: '/nfs/farm/g/glast/g/catalog/pointlike/skymodels/'
     local_path: '/tmp/skymodels/'
     """
 
-    def get_file(self):
-        """Load the roi info file 
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        plt.rc('font', size=16)
 
-        Source path: {self.slac_path}
+        self.setup()
         
-        <br>Local path contents:
-        {dir_info}
-
-        """
-        self.skymodel = self.version or  'uw1208-v3'
-        mkey = self.skymodel[:4]
-
-        year = dict(uw12='P8_12years', uw89='P305_8years' )[mkey]
-
-        self.slac_path = os.path.join(self.slac_path, year,self.skymodel)
-        self.local_path = os.path.join(self.local_path, self.skymodel)
-
-        with ftp.SLAC(self.slac_path, self.local_path) as slac:
-            slac.get('diffuse_info.pkl')
-        
+    def setup(self):
+        assert self.version, 'Require a version'
+        self.skymodel = self.version 
+        self.local_path = load_slac_files(self.skymodel)        
         self.df = pd.read_pickle(os.path.join(self.local_path, 'diffuse_info.pkl'))
-        
-        dir_info = self.shell(f'ls -l {self.local_path}')
+        import yaml
+        c1 = yaml.unsafe_load(open(os.path.join(self.local_path,'config.yaml'), 'rb').read())
+        c2 = yaml.unsafe_load(open(os.path.join(self.local_path,'super_config.yaml'), 'rb').read())
+        c2.update(c1)
 
+        self.gal_config = c2['diffuse']['ring']
+
+    def introduction(self):
+        """Introduction
+
+        These plots summarize properties of the UW model {self.version}. 
+               Source path: {self.slac_path}
+        
+        The galactic diffuse model configuration is:
+
+        {config}
+
+        """        
+        config = self.gal_config
+        # dir_info = self.shell(f'ls -l {self.local_path}')
         
         #-----------
         self.publishme()
 
     def normalization_maps(self):
         """
-        Galactic Normalization maps
+        Normalizations
 
+        The normalization factor maps for each of the 8 band energies. 
         {fig1}
         """
         gal_norm = self.df.diffuse_normalization.apply(lambda d: d['gal'])
         gal_cube = np.vstack(gal_norm.values)
-        hpcube12 =healpix.HPcube(gal_cube, energies=np.logspace(2.125, 3.875, 8))
+        energies=np.logspace(2.125, 3.875, 8)
+        hpcube12 =healpix.HPcube(gal_cube, energies=energies)
 
-        self.gal_norm = healpix.HPcube.from_cube(hpcube12, nside=64, sigma=10)
+        self.gal_norm = gn=healpix.HPcube.from_cube(hpcube12, nside=64, sigma=10)
 
-        fig1 = healpix.ait_multiplot(self.gal_norm, vmin=0.9,vmax=1.1, fignum=1);
+        # fig1 = healpix.ait_multiplot(self.gal_norm, labels=[f'{e/1000.:.2f} GeV' for e in energies] ,
+        #     vmin=0.9,vmax=1.1, fignum=1)
+        fig1 =   healpix.ait_multiplot_bands(gn, vmin=0.9, vmax=1.1)
+        fig1.caption=f'Normalization factors for model {self.version}'
         #-----------
         self.publishme()
 
     def residual_maps(self):
-        """
-        Residual analysis
+        r"""
+        ROI Residuals
 
-        Look at the residuals per ROI for the {nume} energy bands.
-        First the average
+        There are 1728 ROIs, we have the count residuals for each of them. They are not independent since the ROIs overlap by a 
+        factor of ~3. For making maps, we assign the residual to the inner HEALPix pixel, and then smooth by $5^\circ$. 
+
+        Since the galactic diffuse parameterization was adjusted to minimize the ROI residuals, we expect them to be small.
+        
+        {fig1}
+
+        Beyond 10 GeV the diffuse model is not relevant for point-source analysis.  We examine the residuals to assess, and
+        possibly improve the model there. 
+
+        The mean and RMS for the residuals overall show immediate change:
+
+        {fig2}
+
+
+        Finally, maps of the residuals for the ranges 10-100 GeV and 100 GeV to  1 TeV:
+
+       {fig3}  {fig4} 
 
         """
         observed  = np.vstack(self.df.counts.apply(lambda x: x['observed']))
-        total    = np.vstack(self.df.counts.apply(lambda x: x['total']))
+        total     = np.vstack(self.df.counts.apply(lambda x: x['total']))
 
         energies = self.df.iloc[0]['counts']['energies']
+
         nume = len(energies)
         labels = list(map(lambda x:f'{x/1e3:.3f}'[:4] , energies));# labels
         respct = 100*(observed-total)/total # residuals in %
         rmeans = respct.mean(axis=0)
 
-        fig1, ax1 = plt.subplots(figsize=(10,5))
-        ax1.semilogx(energies, respct.mean(axis=0), 'o-')
-        ax1.grid(alpha=0.5);
+        t = healpix.HPcube(respct, energies )
+        self.residual_cube = rc = healpix.HPcube.from_cube(t, nside=64, sigma=5)
 
-        t = healpix.HPcube(respct/rmeans, energies )
-        residual_cube = healpix.HPcube.from_cube(t, nside=64, sigma=5)
+        fig1 = healpix.ait_multiplot_bands(rc, vmin=-2, vmax=2, fignum=1)
+        fig1.caption=f'ROI residuals (in %) for energy bands'
+        fig1.width=800
+
+        fig2, (ax1,ax2) = plt.subplots(2,1, figsize=(8,6),  sharex=True  )
+        fig2.caption = f'Mean and RMS vs. Energy'
+        ax1.semilogx(energies, respct.mean(axis=0), 'o-')
+        ax1.grid(alpha=0.5)
+        ax1.set(ylabel='Mean (%)')
+
+        ax2.semilogx(energies, respct.std(axis=0), 'o-')
+        ax2.grid(alpha=0.5)
+        ax2.set(xlabel='Energy', ylabel='RMS (%)')
+
+        
+        z1 = np.array([rc[i].map for i in range(7,11)])
+        z2 = np.array([rc[i].map for i in range(11,16)])
+        fig3 = healpix.HPmap(z1.mean(axis=0)).ait_plot(fignum=3)
+        fig3.caption = 'Average residual (%), 10-100 GeV'
+        fig4 = healpix.HPmap(z2.mean(axis=0)).ait_plot(fignum=4)
+        fig4.caption = 'Average residual (%), 100 GeV-1 TeV'
+
         #--------------
         self.publishme()
 

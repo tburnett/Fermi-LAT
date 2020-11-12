@@ -13,6 +13,34 @@ from jupydoc import DocPublisher
 
 __docs__= ['Report']
 
+
+
+
+def load_slac_files(skymodel, reload=False, quiet=True,
+        slac_path = '/nfs/farm/g/glast/g/catalog/pointlike/skymodels/',
+        local_path= '/tmp/skymodels/',
+        ):
+    mkey = skymodel[:4]
+    year = dict(uw12='P8_12years', uw86='P305_8years', uw90='P8_10years' )[mkey]
+
+    slac_path = os.path.join(slac_path, year, skymodel)
+    local_path = os.path.join(local_path, skymodel)
+
+    with ftp.SLAC(slac_path, local_path) as slac:
+        folders = filter(lambda f:f.find('.')<0, slac.listdir('plots') )
+        print(f'loading/checking folders to copy from SLAC:  ', end='')
+        for folder in folders:
+            print(f', {folder} ', end='')
+            if not os.path.isdir(os.path.join(local_path, folder)):
+                slac.get(f'plots/{folder}/*', reload=reload, quiet=quiet)
+        slac.get('config.yaml'); print(', config.yaml', end='')
+        slac.get('../config.yaml')
+        lp = local_path
+        shutil.move(os.path.join(lp, '../config.yaml'), 
+                os.path.join(lp, 'super_config.yaml') )
+        print(', ../config.yaml -> super_config.yaml')
+
+
 class Report(DocPublisher):
     """
     title: UW model {skymodel} Report
@@ -44,14 +72,14 @@ class Report(DocPublisher):
 
         self.decorator = self.decorator_path.format(year+'/'+self.skymodel)
 
-    def check_slac_files(self):
+    def check_slac_files(self, reload=False, quiet=False):
         with ftp.SLAC(self.slac_path, self.local_path) as slac:
             self.plot_folders = folders = filter(lambda f:f.find('.')<0, slac.listdir('plots') )
             print(f'loading/checking folders to copy from SLAC:  ', end='')
             for folder in folders:
                 print(f', {folder} ', end='')
                 if not os.path.isdir(os.path.join(self.local_path, folder)):
-                    slac.get(f'plots/{folder}/*')
+                    slac.get(f'plots/{folder}/*', reload=reload, quiet=quiet)
             slac.get('config.yaml'); print(', config.yaml', end='')
             slac.get('../config.yaml')
             lp = self.local_path
