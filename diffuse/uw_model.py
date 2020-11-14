@@ -572,7 +572,7 @@ class UWdiffuseModel(DocPublisher):
 
 class ResidualAnalysis(DocPublisher):
     """
-    title: Analyis of {version} residuals and galactic diffuse norms
+    title: Analysis of {version} residuals and galactic diffuse norms
 
     sections: introduction normalization_maps residual_maps
 
