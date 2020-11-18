@@ -13,12 +13,13 @@ __docs__= ['PSCstudy']
 
 class PSCstudy(DocPublisher):
     """
-    title: Study the Catalog diffuse parameters
+    title: Study of the Catalog diffuse parameters
 
     author: Toby Burnett
     
-    sections: introduction plots [ plot_version.3FGL plot_version.4FGL-DR2 plot_version.4FGL-DR2-UW  ]
-        summary
+    sections: introduction 
+        plots [ plot_version.3FGL plot_version.4FGL-DR2 plot_version.4FGL-DR2-UW  plots_summary ]
+        uw_comparison
 
     diffuse_files: 
         - 'gll_iem_v07x_hpx.fits'
@@ -35,6 +36,11 @@ class PSCstudy(DocPublisher):
 
     uw_diffuse: $FERMI/diffuse/uw/gll_iem_uw_v3.fits
 
+    abstract: |
+        This is an evaluation of how well the galactic diffuse models used by the Fermi-LAT catalog account for 
+        large, greater than a few degrees, angular scale features of the data, by analyzing the diffuse fit parameters
+        for each ROI. 
+
     """
 
     def __init__(self, **kwargs):
@@ -43,7 +49,7 @@ class PSCstudy(DocPublisher):
         self.gflux = healpix.HPcube.from_FITS(os.path.join(self.diffuse_path, self.diffuse_files[0]))
         self.isoflux = FluxTable(os.path.join(self.diffuse_path,self.diffuse_files[1]))
         plt.rc('font', size=14)
-
+        self.dmap={}
 
     def roi_dataframe(self, f):
         from astropy.io import fits
@@ -141,11 +147,12 @@ class PSCstudy(DocPublisher):
        
         df = self.roi_dataframe(psc_file)        
 
-        dm = DiffuseMaps(df, self.gflux, self.isoflux)
+        dm = DiffuseMaps(df, self.gflux, self.isoflux )
         self.dm[version] = dm
 
-        fig1 = dm.ait_plot( fignum=1 )
-        fig1.caption=f'Diffuse normalization factor at 1 GeV.'
+        fig1 = dm.ait_plot( fignum=1)
+        fig1.caption=f'Diffuse normalization factor, relative to mean, at 1 GeV for {version}.'
+        self.dmap[version]=fig1
 
         fig2 = dm.hist(fignum=2)
         fig2.caption=f'Total diffuse factor: red is weighted by flux.'
@@ -166,11 +173,12 @@ class PSCstudy(DocPublisher):
         
         Each subsection has a set of plots, described here:
 
-        #### Global maps
-        Here we make a map of the diffuse, galactic+isotropic, normalization factor at 1 GeV, for each pixel of an nside=128 map, using the nearest ROI.
-        This is the *relative* change of the diffuse prediction, based on the galactic and isotropic normalization factors, using the galactic flux at the center.
+        ### Global plots
+        Here we make a map of the diffuse, galactic+isotropic, normalization factor at 1 GeV, for each pixel of an nside=128 map, using the nearest ROI. 
+        
+        This is the *relative* change of the diffuse prediction, based on the galactic and isotropic normalization factors, using the galactic flux at the center. The map is with respect to the mean.
 
-        #### Parameter values along stripes through the GC.
+        ### Parameter values along stripes through the GC.
         The most difficult regions are along the galactic plane, and the meridian that passes
         through the bubbles and Loop I. The latter features are not part of the galactic model, but were presumably accounted for by the "patch" component 
         derived using data.  
@@ -189,18 +197,38 @@ class PSCstudy(DocPublisher):
 
         self.publishme()
 
-    def summary(self):
+    def plots_summary(self):
         r"""Summary
 
-        Based on the count normalization adjustment at 1 GeV, the UW v3 model, applied to the 10-year
+        Based on the combined diffuse normalization adjustment at 1 GeV, the UW v3 model, applied to the 10-year
         data, is best, with 3FGL second. 
 
-        The RMS values, in percent, for the combined diffuse normalization factors at 1 GeV for the three catalogs:
+        The STD values are in percent, for the combined diffuse normalization factors at 1 GeV for the three catalogs.
 
-        {summary_table}
         
+        ### The correction maps with STD values:
+
+        ### 3FGL: {std1}% {map1}
+        ### 4FGL-DR2: {std2}% {map2}
+        ### 4FGL-DR2-UW: {std3}% {map3}
+
+             
+        """
+        stds = []
+        maps = []
+
+        for key in '3FGL 4FGL-DR2 4FGL-DR2-UW'.split():
+            cmap = self.dm[key].fmap.map
+            std = round(cmap.std()*100,1)
+            stds.append(std)
+            maps.append( self.figure(self.dmap[key], width=600, caption=None) )
+        std1,std2,std3 = stds
+        map1,map2,map3 = maps
         
-        ### Comparison with UW analysis
+        self.publishme()
+
+    def uw_comparison(self):
+        """Comparison with UW analysis
 
         These results can be compared with the equivalents from the 10- and 12-year UW models, {model_ref} respectively.
         Those fits are performed independently for each of the 8 energy bands, with fixed isotropic. So eight parameters
@@ -224,15 +252,9 @@ class PSCstudy(DocPublisher):
         It is not as successful, but certainly is an improvement over the current version. A difference is that
         it applied the patch adjustment for energies above 10 GeV using a log-parabola fit to the 100 MeV- 10 GeV 
         range. 
-     
-        """
-        with self.capture_print() as summary_table:
-            for key in '3FGL 4FGL-DR2 4FGL-DR2-UW'.split():
-                cmap = self.dm[key].cmap.map
-                print(f'{key:15s}{cmap.std()*100:.1f}%')
 
+        """
         uwmodels = 'uw9011 uw1210'.split()
-        
         plots=[]
         for model in uwmodels:
             fn = f'/tmp/skymodels/{model}/plots/environment/galactic_correction_maps_{model}.jpg'
@@ -252,7 +274,6 @@ class PSCstudy(DocPublisher):
 
         doc_href = lambda model: f'../ResidualAnalysis.{model}/index.html?skipDecoration'
         model_ref = ' and '.join( [f'<a href="{doc_href(model)}">{model}</a>' for model in uwmodels ])
-
 
 
         self.publishme()
@@ -278,12 +299,11 @@ class DiffuseMaps(object):
         allskydirs = SkyDir.from_healpix(range(12*nside**2),nside)
         idx, _ = allskydirs.match(roidirs)
 
+        cnt_norm = df.iloc[idx].cnt_norm.values
 
+        self.fmap = healpix.HPmap(cnt_norm)
+        self.fmapmean =  healpix.HPmap(cnt_norm/cnt_norm.mean())       
 
-        cnt_norm = df.iloc[idx].cnt_norm
-        self.cmap = healpix.HPmap(cnt_norm.values)
-                
-    
     def stripe(self, label='Polar', fignum=2, energy=1000):
         df = self.df
            
@@ -347,12 +367,12 @@ class DiffuseMaps(object):
         
         ait = dict( vmin=0.9,vmax=1.1)
         ait.update(aitkw)
-        self.cmap.ait_plot(fig=fig, **ait)
+        self.fmapmean.ait_plot(fig=fig, **ait)
         return plt.gcf()
 
     def hist(self, fignum=1):
         
-        m = self.cmap.map; nside=128
+        m = self.fmap.map; nside=128
         allskydirs = SkyDir.from_healpix(range(12*nside**2),nside)
         w = self.gflux(allskydirs, 1e3)
         
